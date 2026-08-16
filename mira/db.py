@@ -83,6 +83,12 @@ class SQLiteRepository:
                 ),
             )
 
+    def create_task(self, task: Task) -> Task:
+        if self.get_task(task.id) is not None:
+            raise ValueError(f"Task already exists: {task.id}")
+        self.save_task(task)
+        return task
+
     def get_task(self, task_id: str) -> Task | None:
         with self.connect() as connection:
             row = connection.execute(
@@ -148,4 +154,3 @@ def _dt(value: datetime | None) -> str | None:
 
 def _task(row: sqlite3.Row) -> Task:
     return Task(**dict(row))
-

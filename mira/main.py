@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import TypeAdapter, ValidationError
 
 from mira.db import SQLiteRepository
-from mira.models import ClientEvent, ProgressReported, SnapshotRequested
+from mira.models import ClientEvent, ProgressReported, SnapshotRequested, TaskCreate
 from mira.policy import DeterministicMiraPolicy
 from mira.service import MiraService
 
@@ -28,6 +30,12 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
     app = FastAPI(title="Mira v0.1", version="0.1.0", lifespan=lifespan)
     app.state.service = service
+    web_dir = Path(__file__).parent / "web"
+    app.mount("/static", StaticFiles(directory=web_dir), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def dashboard():
+        return FileResponse(web_dir / "index.html")
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -36,6 +44,10 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/snapshot")
     def snapshot():
         return service.snapshot()
+
+    @app.post("/api/tasks", status_code=201)
+    def create_task(task: TaskCreate):
+        return service.create_task(task)
 
     @app.post("/api/progress")
     def report_progress(event: ProgressReported):
@@ -85,4 +97,3 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
 
 app = create_app()
-

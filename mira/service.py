@@ -3,7 +3,14 @@ from __future__ import annotations
 from uuid import uuid4
 
 from mira.db import SQLiteRepository
-from mira.models import FocusSession, MiraResponse, ProgressReported, SessionSnapshot
+from mira.models import (
+    FocusSession,
+    MiraResponse,
+    ProgressReported,
+    SessionSnapshot,
+    Task,
+    TaskCreate,
+)
 from mira.policy import DeterministicMiraPolicy
 
 
@@ -13,6 +20,14 @@ class MiraService:
     ) -> None:
         self.repository = repository
         self.policy = policy
+
+    def create_task(self, data: TaskCreate) -> Task:
+        task = Task(
+            id=f"task-{uuid4().hex[:12]}",
+            title=data.title,
+            priority=data.priority,
+        )
+        return self.repository.create_task(task)
 
     def report_progress(
         self, session_id: str, event: ProgressReported
@@ -44,4 +59,3 @@ class MiraService:
             tasks=self.repository.list_tasks(),
             active_focus_session=self.repository.active_focus_session(),
         )
-

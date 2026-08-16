@@ -27,6 +27,10 @@ Start the API:
 .venv\Scripts\python -m uvicorn mira.main:app --reload
 ```
 
+Open `http://127.0.0.1:8000` for the local execution dashboard. It supports
+task creation, progress check-ins, live structured Mira responses, persisted
+task state, and a visible Focus Mode timer.
+
 In a second terminal, run the mock end-to-end interaction:
 
 ```powershell
@@ -77,4 +81,3 @@ Client progress event:
 ```
 
 The server responds with `type: "mira.response"` and a structured `MiraResponse`. Send `type: "session.snapshot.requested"` to retrieve the persisted task and active Focus Mode state.
-
