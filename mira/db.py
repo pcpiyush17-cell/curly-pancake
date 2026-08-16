@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from mira.models import FocusSession, Task, TaskStatus, utc_now
+from mira.models import Commitment, FocusSession, Goal, Task, TaskStatus, utc_now
 
 
 SCHEMA = """
@@ -16,9 +16,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL,
     progress REAL NOT NULL CHECK(progress >= 0 AND progress <= 1),
     priority INTEGER NOT NULL,
+    goal_id TEXT,
     due_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+    ,FOREIGN KEY(goal_id) REFERENCES goals(id)
 );
 CREATE TABLE IF NOT EXISTS goals (
     id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
@@ -66,6 +68,11 @@ class SQLiteRepository:
                 connection.execute(
                     "ALTER TABLE focus_sessions ADD COLUMN paused_at TEXT"
                 )
+            task_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(tasks)")
+            }
+            if "goal_id" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN goal_id TEXT")
 
     def seed_demo_tasks(self) -> None:
         if self.list_tasks():
@@ -78,15 +85,16 @@ class SQLiteRepository:
         with self.connect() as connection:
             connection.execute(
                 """INSERT INTO tasks
-                (id,title,status,progress,priority,due_at,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?)
+                (id,title,status,progress,priority,goal_id,due_at,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET title=excluded.title,
                 status=excluded.status, progress=excluded.progress,
-                priority=excluded.priority, due_at=excluded.due_at,
+                priority=excluded.priority, goal_id=excluded.goal_id,
+                due_at=excluded.due_at,
                 updated_at=excluded.updated_at""",
                 (
                     task.id, task.title, task.status.value, task.progress,
-                    task.priority, _dt(task.due_at), _dt(task.created_at),
+                    task.priority, task.goal_id, _dt(task.due_at), _dt(task.created_at),
                     _dt(task.updated_at),
                 ),
             )
@@ -111,7 +119,14 @@ class SQLiteRepository:
             ).fetchall()
         return [_task(row) for row in rows]
 
-    def update_task(self, task_id: str, *, title: str | None, priority: int | None) -> Task:
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        title: str | None,
+        priority: int | None,
+        goal_id: str | None,
+    ) -> Task:
         task = self.get_task(task_id)
         if task is None:
             raise KeyError(task_id)
@@ -119,8 +134,72 @@ class SQLiteRepository:
             task.title = title
         if priority is not None:
             task.priority = priority
+        if goal_id is not None:
+            task.goal_id = goal_id or None
         self.save_task(task)
         return task
+
+    def create_goal(self, goal: Goal) -> Goal:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO goals (id,title,status,created_at) VALUES (?,?,?,?)",
+                (goal.id, goal.title, goal.status, _dt(goal.created_at)),
+            )
+        return goal
+
+    def list_goals(self) -> list[Goal]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM goals ORDER BY created_at DESC"
+            ).fetchall()
+        return [Goal(**dict(row)) for row in rows]
+
+    def update_goal_status(self, goal_id: str, status: str) -> Goal:
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE goals SET status=? WHERE id=?", (status, goal_id)
+            ).rowcount
+            row = connection.execute(
+                "SELECT * FROM goals WHERE id=?", (goal_id,)
+            ).fetchone()
+        if not changed or row is None:
+            raise KeyError(goal_id)
+        return Goal(**dict(row))
+
+    def create_commitment(self, commitment: Commitment) -> Commitment:
+        if commitment.task_id and self.get_task(commitment.task_id) is None:
+            raise KeyError(commitment.task_id)
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO commitments
+                (id,task_id,statement,promised_at,due_at,kept) VALUES (?,?,?,?,?,?)""",
+                (
+                    commitment.id, commitment.task_id, commitment.statement,
+                    _dt(commitment.promised_at), _dt(commitment.due_at), None,
+                ),
+            )
+        return commitment
+
+    def list_commitments(self, limit: int = 20) -> list[Commitment]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM commitments ORDER BY promised_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [_commitment(row) for row in rows]
+
+    def resolve_commitment(self, commitment_id: str, kept: bool) -> Commitment:
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE commitments SET kept=? WHERE id=?",
+                (int(kept), commitment_id),
+            ).rowcount
+            row = connection.execute(
+                "SELECT * FROM commitments WHERE id=?", (commitment_id,)
+            ).fetchone()
+        if not changed or row is None:
+            raise KeyError(commitment_id)
+        return _commitment(row)
 
     def archive_task(self, task_id: str) -> Task:
         task = self.get_task(task_id)
@@ -209,3 +288,9 @@ def _dt(value: datetime | None) -> str | None:
 
 def _task(row: sqlite3.Row) -> Task:
     return Task(**dict(row))
+
+
+def _commitment(row: sqlite3.Row) -> Commitment:
+    data = dict(row)
+    data["kept"] = None if data["kept"] is None else bool(data["kept"])
+    return Commitment(**data)

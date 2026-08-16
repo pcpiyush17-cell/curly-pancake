@@ -33,6 +33,7 @@ class Task(BaseModel):
     status: TaskStatus = TaskStatus.TODO
     progress: float = Field(default=0, ge=0, le=1)
     priority: int = Field(default=3, ge=1, le=5)
+    goal_id: str | None = None
     due_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -41,6 +42,7 @@ class Task(BaseModel):
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     priority: int = Field(default=3, ge=1, le=5)
+    goal_id: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -54,6 +56,7 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=160)
     priority: int | None = Field(default=None, ge=1, le=5)
+    goal_id: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -73,6 +76,18 @@ class Goal(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class GoalCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+
+    @field_validator("title")
+    @classmethod
+    def goal_title_is_not_blank(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("title must not be blank")
+        return title
+
+
 class Commitment(BaseModel):
     id: str
     task_id: str | None = None
@@ -80,6 +95,20 @@ class Commitment(BaseModel):
     promised_at: datetime = Field(default_factory=utc_now)
     due_at: datetime | None = None
     kept: bool | None = None
+
+
+class CommitmentCreate(BaseModel):
+    statement: str = Field(min_length=1, max_length=300)
+    task_id: str | None = None
+    due_at: datetime | None = None
+
+    @field_validator("statement")
+    @classmethod
+    def statement_is_not_blank(cls, value: str) -> str:
+        statement = value.strip()
+        if not statement:
+            raise ValueError("statement must not be blank")
+        return statement
 
 
 class Memory(BaseModel):
@@ -176,5 +205,7 @@ ClientEvent = Annotated[
 
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
+    goals: list[Goal] = Field(default_factory=list)
+    commitments: list[Commitment] = Field(default_factory=list)
     active_focus_session: FocusSession | None = None
     focus_history: list[FocusSession] = Field(default_factory=list)

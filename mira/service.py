@@ -6,6 +6,10 @@ from uuid import uuid4
 from mira.db import SQLiteRepository
 from mira.models import (
     FocusSession,
+    Goal,
+    GoalCreate,
+    Commitment,
+    CommitmentCreate,
     MiraResponse,
     ProgressReported,
     SessionSnapshot,
@@ -29,13 +33,35 @@ class MiraService:
             id=f"task-{uuid4().hex[:12]}",
             title=data.title,
             priority=data.priority,
+            goal_id=data.goal_id,
         )
         return self.repository.create_task(task)
 
     def update_task(self, task_id: str, data: TaskUpdate) -> Task:
         return self.repository.update_task(
-            task_id, title=data.title, priority=data.priority
+            task_id, title=data.title, priority=data.priority, goal_id=data.goal_id
         )
+
+    def create_goal(self, data: GoalCreate) -> Goal:
+        return self.repository.create_goal(
+            Goal(id=f"goal-{uuid4().hex[:12]}", title=data.title)
+        )
+
+    def update_goal_status(self, goal_id: str, status: str) -> Goal:
+        return self.repository.update_goal_status(goal_id, status)
+
+    def create_commitment(self, data: CommitmentCreate) -> Commitment:
+        return self.repository.create_commitment(
+            Commitment(
+                id=f"commitment-{uuid4().hex[:12]}",
+                task_id=data.task_id,
+                statement=data.statement,
+                due_at=data.due_at,
+            )
+        )
+
+    def resolve_commitment(self, commitment_id: str, kept: bool) -> Commitment:
+        return self.repository.resolve_commitment(commitment_id, kept)
 
     def archive_task(self, task_id: str) -> Task:
         active_focus = self.repository.active_focus_session()
@@ -95,6 +121,8 @@ class MiraService:
                 for task in self.repository.list_tasks()
                 if task.status != "archived"
             ],
+            goals=self.repository.list_goals(),
+            commitments=self.repository.list_commitments(),
             active_focus_session=self.repository.active_focus_session(),
             focus_history=self.repository.focus_history(),
         )

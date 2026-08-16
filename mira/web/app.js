@@ -1,4 +1,4 @@
-const state = { tasks: [], socket: null, focus: null, history: [], timerHandle: null };
+const state = { tasks: [], goals: [], commitments: [], socket: null, focus: null, history: [], timerHandle: null };
 const $ = (id) => document.getElementById(id);
 
 function toast(message) {
@@ -21,6 +21,7 @@ function renderTasks() {
   $("report-task").innerHTML = options; $("focus-task").innerHTML = options;
   if (sorted.some(t => t.id === selectedReport)) $("report-task").value = selectedReport;
   if (sorted.some(t => t.id === selectedFocus)) $("focus-task").value = selectedFocus;
+  $("commitment-task").innerHTML = `<option value="">No linked task</option>${options}`;
   document.querySelectorAll(".edit-task").forEach(button => button.addEventListener("click", editTask));
   document.querySelectorAll(".archive-task").forEach(button => button.addEventListener("click", archiveTask));
 }
@@ -30,9 +31,25 @@ function escapeHtml(value) {
 }
 
 function applySnapshot(snapshot) {
-  state.tasks = snapshot.tasks; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderHistory();
+  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderHistory();
   if (state.focus) startTimer(state.focus); else resetTimer();
 }
+
+function renderGoals() {
+  const active = state.goals.filter(goal => goal.status === "active"); $("goal-count").textContent = `${active.length} ACTIVE`;
+  $("goal-list").innerHTML = state.goals.map(goal => `<div class="goal ${goal.status}"><div><strong>${escapeHtml(goal.title)}</strong><br><small>${goal.status}</small></div><span class="goal-actions">${goal.status === "active" ? `<button class="quiet pause-goal" data-id="${goal.id}">Pause</button><button class="primary achieve-goal" data-id="${goal.id}">Achieved</button>` : `<button class="quiet activate-goal" data-id="${goal.id}">Activate</button>`}</span></div>`).join("") || `<p class="muted">No goals yet. Define the outcome behind the work.</p>`;
+  [["pause-goal","paused"],["achieve-goal","achieved"],["activate-goal","active"]].forEach(([name,status]) => document.querySelectorAll(`.${name}`).forEach(button => button.addEventListener("click", () => setGoalStatus(button.dataset.id, status))));
+}
+
+function renderCommitments() {
+  const open = state.commitments.filter(item => item.kept === null); $("commitment-count").textContent = `${open.length} OPEN`;
+  $("commitment-list").innerHTML = state.commitments.map(item => { const task = state.tasks.find(t => t.id === item.task_id); const result = item.kept === null ? "open" : item.kept ? "kept" : "missed"; return `<div class="commitment ${item.kept === null ? "" : "resolved"}"><div><strong>${escapeHtml(item.statement)}</strong><br><small>${task ? escapeHtml(task.title) + " · " : ""}${item.due_at ? new Date(item.due_at).toLocaleString() + " · " : ""}${result}</small></div>${item.kept === null ? `<span class="commitment-actions"><button class="primary keep-commitment" data-id="${item.id}">Kept</button><button class="danger miss-commitment" data-id="${item.id}">Missed</button></span>` : ""}</div>`; }).join("") || `<p class="muted">No open promises. Commit only when you mean it.</p>`;
+  document.querySelectorAll(".keep-commitment").forEach(button => button.addEventListener("click", () => resolveCommitment(button.dataset.id, "kept")));
+  document.querySelectorAll(".miss-commitment").forEach(button => button.addEventListener("click", () => resolveCommitment(button.dataset.id, "missed")));
+}
+
+async function setGoalStatus(id, status) { const response = await fetch(`/api/goals/${id}/${status}`, {method:"POST"}); if (!response.ok) return toast("Goal could not be updated."); const goal = await response.json(); Object.assign(state.goals.find(item => item.id === id), goal); renderGoals(); }
+async function resolveCommitment(id, result) { const response = await fetch(`/api/commitments/${id}/${result}`, {method:"POST"}); if (!response.ok) return toast("Commitment could not be updated."); const item = await response.json(); Object.assign(state.commitments.find(existing => existing.id === id), item); renderCommitments(); }
 
 function renderHistory() {
   $("focus-history").innerHTML = state.history.slice(0, 5).map(item => {
@@ -124,6 +141,8 @@ $("task-form").addEventListener("submit", async e => {
   if (!response.ok) return toast("That task could not be added.");
   state.tasks.push(await response.json()); renderTasks(); e.target.reset(); toast("Task added.");
 });
+$("goal-form").addEventListener("submit", async e => { e.preventDefault(); const response = await fetch("/api/goals", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:$("goal-title").value})}); if (!response.ok) return toast("Goal could not be added."); state.goals.unshift(await response.json()); renderGoals(); e.target.reset(); });
+$("commitment-form").addEventListener("submit", async e => { e.preventDefault(); const due = $("commitment-due").value; const response = await fetch("/api/commitments", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({statement:$("commitment-statement").value,task_id:$("commitment-task").value || null,due_at:due ? new Date(due).toISOString() : null})}); if (!response.ok) return toast("Commitment could not be added."); state.commitments.unshift(await response.json()); renderCommitments(); e.target.reset(); });
 $("report-form").addEventListener("submit", e => {
   e.preventDefault();
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return toast("Mira is reconnecting. Try again in a moment.");

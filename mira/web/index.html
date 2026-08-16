@@ -79,6 +79,23 @@
           <button type="submit" class="primary">Report to Mira</button>
         </form>
       </article>
+
+      <article class="panel direction-panel">
+        <div class="section-heading"><div><p class="eyebrow">DIRECTION</p><h2>Goals</h2></div><span id="goal-count" class="pill">0 ACTIVE</span></div>
+        <form id="goal-form" class="inline-form"><input id="goal-title" maxlength="180" placeholder="Define an outcome…" required><button>Add goal</button></form>
+        <div id="goal-list" class="goal-list"></div>
+      </article>
+
+      <article class="panel commitment-panel">
+        <div class="section-heading"><div><p class="eyebrow">YOUR WORD</p><h2>Commitments</h2></div><span id="commitment-count" class="pill">0 OPEN</span></div>
+        <form id="commitment-form">
+          <input id="commitment-statement" maxlength="300" placeholder="I will finish the first draft by…" required>
+          <select id="commitment-task" aria-label="Related task"><option value="">No linked task</option></select>
+          <input id="commitment-due" type="datetime-local" aria-label="Due time">
+          <button>Add commitment</button>
+        </form>
+        <div id="commitment-list" class="commitment-list"></div>
+      </article>
     </section>
   </main>
   <div id="toast" role="status"></div>
