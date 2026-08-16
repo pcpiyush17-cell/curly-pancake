@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -48,6 +49,14 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/reasoning/status")
+    def reasoning_status():
+        return {
+            "configured_provider": service.reasoning.configured_provider,
+            "last_provider": service.reasoning.last_provider,
+            "last_error": service.reasoning.last_error,
+        }
 
     @app.get("/api/snapshot")
     def snapshot():
@@ -132,7 +141,15 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 try:
                     event = event_adapter.validate_python(raw_event)
                     if isinstance(event, ProgressReported):
-                        response = service.report_progress(session_id, event)
+                        await websocket.send_json(
+                            {
+                                "type": "mira.thinking",
+                                "payload": {"task_id": event.task_id},
+                            }
+                        )
+                        response = await asyncio.to_thread(
+                            service.report_progress, session_id, event
+                        )
                         await websocket.send_json(
                             {
                                 "type": "mira.response",

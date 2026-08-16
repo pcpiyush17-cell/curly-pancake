@@ -14,6 +14,9 @@ dev = [
   "httpx>=0.27,<1",
   "pytest>=8,<9",
 ]
+ai = [
+  "openai>=1.68,<3",
+]
 
 [tool.setuptools]
 packages = ["mira"]

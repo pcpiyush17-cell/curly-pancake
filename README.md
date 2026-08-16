@@ -35,6 +35,14 @@ complete/cancel controls, and recent Focus-session history.
 The third slice introduces goals, goal-linked tasks, explicit commitments with
 due times, and kept/missed outcomes for future evidence-based coaching.
 
+## Reasoning providers
+
+Mira always has a deterministic local fallback. To enable the optional OpenAI
+structured-output provider, install `.[ai]`, copy `.env.example` to your local
+environment, and set both `OPENAI_API_KEY` and `MIRA_OPENAI_MODEL`. The model
+receives task, goal, commitment, Focus, and progress context, but the backend
+keeps exclusive authority over UI and persistence actions.
+
 In a second terminal, run the mock end-to-end interaction:
 
 ```powershell
