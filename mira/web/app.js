@@ -1,4 +1,4 @@
-const state = { tasks: [], socket: null, focus: null, timerHandle: null };
+const state = { tasks: [], socket: null, focus: null, history: [], timerHandle: null };
 const $ = (id) => document.getElementById(id);
 
 function toast(message) {
@@ -14,12 +14,15 @@ function renderTasks() {
       <span class="dot"></span>
       <div><div class="title">${escapeHtml(task.title)}</div><small>P${task.priority} · ${task.status.replace("_", " ")}</small></div>
       <span class="percent">${Math.round(task.progress * 100)}%</span>
+      <span class="task-actions"><button type="button" class="quiet edit-task" data-id="${task.id}">Edit</button><button type="button" class="danger archive-task" data-id="${task.id}">Archive</button></span>
     </div>`).join("") || `<p class="muted">Your queue is empty. Add one concrete task.</p>`;
   const options = sorted.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("");
   const selectedReport = $("report-task").value, selectedFocus = $("focus-task").value;
   $("report-task").innerHTML = options; $("focus-task").innerHTML = options;
   if (sorted.some(t => t.id === selectedReport)) $("report-task").value = selectedReport;
   if (sorted.some(t => t.id === selectedFocus)) $("focus-task").value = selectedFocus;
+  document.querySelectorAll(".edit-task").forEach(button => button.addEventListener("click", editTask));
+  document.querySelectorAll(".archive-task").forEach(button => button.addEventListener("click", archiveTask));
 }
 
 function escapeHtml(value) {
@@ -27,8 +30,15 @@ function escapeHtml(value) {
 }
 
 function applySnapshot(snapshot) {
-  state.tasks = snapshot.tasks; state.focus = snapshot.active_focus_session; renderTasks();
-  if (state.focus) startTimer(state.focus);
+  state.tasks = snapshot.tasks; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderHistory();
+  if (state.focus) startTimer(state.focus); else resetTimer();
+}
+
+function renderHistory() {
+  $("focus-history").innerHTML = state.history.slice(0, 5).map(item => {
+    const task = state.tasks.find(t => t.id === item.task_id);
+    return `<div class="history-item"><strong>${escapeHtml(task?.title || "Archived task")}</strong><span class="${item.status}">${item.status} · ${item.planned_minutes}m</span></div>`;
+  }).join("") || `<p class="muted">No sessions yet.</p>`;
 }
 
 function applyMira(response) {
@@ -49,16 +59,48 @@ function applyMira(response) {
 function startTimer(focus) {
   state.focus = focus; clearInterval(state.timerHandle);
   const task = state.tasks.find(t => t.id === focus.task_id);
-  $("focus-title").textContent = task?.title || "Focused session"; $("focus-status").textContent = "ACTIVE";
+  $("focus-title").textContent = task?.title || "Focused session"; $("focus-status").textContent = focus.status.toUpperCase();
+  $("focus-controls").hidden = false; $("focus-toggle").textContent = focus.status === "paused" ? "Resume" : "Pause";
   const total = focus.planned_minutes * 60, started = new Date(focus.started_at).getTime();
   const tick = () => {
-    const elapsed = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const clock = focus.status === "paused" && focus.paused_at ? new Date(focus.paused_at).getTime() : Date.now();
+    const elapsed = Math.max(0, Math.floor((clock - started) / 1000));
     const left = Math.max(0, total - elapsed), minutes = Math.floor(left / 60), seconds = left % 60;
     $("timer").textContent = `${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}`;
     $("timer-progress").style.width = `${Math.min(100, elapsed / total * 100)}%`;
     $("focus-detail").textContent = `${focus.planned_minutes}-minute block · stay with the task`;
     if (!left) { clearInterval(state.timerHandle); $("focus-status").textContent = "DONE"; }
-  }; tick(); state.timerHandle = setInterval(tick, 1000);
+  }; tick(); if (focus.status === "active") state.timerHandle = setInterval(tick, 1000);
+}
+
+function resetTimer() {
+  clearInterval(state.timerHandle); state.focus = null; $("focus-title").textContent = "No session active"; $("focus-status").textContent = "IDLE"; $("timer").textContent = "25:00"; $("timer-progress").style.width = "0"; $("focus-controls").hidden = true; $("focus-detail").textContent = "Complete a task and ask Mira to start the next focus block.";
+}
+
+async function editTask(event) {
+  const task = state.tasks.find(item => item.id === event.currentTarget.dataset.id);
+  const title = prompt("Task title", task.title); if (title === null) return;
+  const priorityText = prompt("Priority (1–5)", String(task.priority)); if (priorityText === null) return;
+  const response = await fetch(`/api/tasks/${task.id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({title, priority:Number(priorityText)}) });
+  if (!response.ok) return toast("That task could not be updated.");
+  Object.assign(task, await response.json()); renderTasks(); toast("Task updated.");
+}
+
+async function archiveTask(event) {
+  const task = state.tasks.find(item => item.id === event.currentTarget.dataset.id);
+  if (!confirm(`Archive “${task.title}”?`)) return;
+  const response = await fetch(`/api/tasks/${task.id}/archive`, {method:"POST"});
+  if (!response.ok) return toast((await response.json()).detail || "That task could not be archived.");
+  state.tasks = state.tasks.filter(item => item.id !== task.id); renderTasks(); toast("Task archived.");
+}
+
+async function transitionFocus(action) {
+  if (!state.focus) return;
+  const response = await fetch(`/api/focus/${state.focus.id}/${action}`, {method:"POST"});
+  if (!response.ok) return toast((await response.json()).detail || "Focus Mode could not be updated.");
+  const session = await response.json();
+  state.history = [session, ...state.history.filter(item => item.id !== session.id)]; renderHistory();
+  if (["completed","cancelled"].includes(session.status)) resetTimer(); else startTimer(session);
 }
 
 function connect() {
@@ -94,5 +136,8 @@ $("report-form").addEventListener("submit", e => {
   }));
   $("report-text").value = "";
 });
+$("focus-toggle").addEventListener("click", () => transitionFocus(state.focus?.status === "paused" ? "resume" : "pause"));
+$("focus-complete").addEventListener("click", () => transitionFocus("complete"));
+$("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
 
 connect();

@@ -96,3 +96,59 @@ def test_dashboard_and_task_creation(tmp_path):
 
         blank = client.post("/api/tasks", json={"title": "   ", "priority": 3})
         assert blank.status_code == 422
+
+
+def test_task_edit_and_archive(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        updated = client.patch(
+            "/api/tasks/task-ml", json={"title": "Finish ML review", "priority": 2}
+        )
+        assert updated.status_code == 200
+        assert updated.json()["title"] == "Finish ML review"
+        assert updated.json()["priority"] == 2
+
+        archived = client.post("/api/tasks/task-ml/archive")
+        assert archived.status_code == 200
+        assert archived.json()["status"] == "archived"
+        ids = {task["id"] for task in client.get("/api/snapshot").json()["tasks"]}
+        assert "task-ml" not in ids
+
+
+def test_focus_lifecycle_and_history(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        started = client.post(
+            "/api/progress",
+            json={
+                "source": "text",
+                "task_id": "task-ml",
+                "transcript": "ML is done. Starting DSA.",
+                "progress": 1,
+                "start_focus": True,
+                "focus_task_id": "task-dsa",
+                "focus_minutes": 25,
+            },
+        ).json()
+        focus_id = next(
+            action["focus_session_id"]
+            for action in started["ui_actions"]
+            if action["type"] == "start_focus_mode"
+        )
+
+        paused = client.post(f"/api/focus/{focus_id}/pause")
+        assert paused.status_code == 200
+        assert paused.json()["status"] == "paused"
+        assert client.post(f"/api/focus/{focus_id}/pause").status_code == 409
+
+        resumed = client.post(f"/api/focus/{focus_id}/resume")
+        assert resumed.status_code == 200
+        assert resumed.json()["status"] == "active"
+
+        completed = client.post(f"/api/focus/{focus_id}/complete")
+        assert completed.status_code == 200
+        assert completed.json()["status"] == "completed"
+        snapshot = client.get("/api/snapshot").json()
+        assert snapshot["active_focus_session"] is None
+        assert snapshot["focus_history"][0]["id"] == focus_id
+        assert snapshot["focus_history"][0]["status"] == "completed"

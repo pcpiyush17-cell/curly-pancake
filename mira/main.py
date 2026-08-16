@@ -11,7 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import TypeAdapter, ValidationError
 
 from mira.db import SQLiteRepository
-from mira.models import ClientEvent, ProgressReported, SnapshotRequested, TaskCreate
+from mira.models import (
+    ClientEvent,
+    ProgressReported,
+    SnapshotRequested,
+    TaskCreate,
+    TaskUpdate,
+)
 from mira.policy import DeterministicMiraPolicy
 from mira.service import MiraService
 
@@ -48,6 +54,33 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.post("/api/tasks", status_code=201)
     def create_task(task: TaskCreate):
         return service.create_task(task)
+
+    @app.patch("/api/tasks/{task_id}")
+    def update_task(task_id: str, task: TaskUpdate):
+        try:
+            return service.update_task(task_id, task)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Unknown task: {task_id}")
+
+    @app.post("/api/tasks/{task_id}/archive")
+    def archive_task(task_id: str):
+        try:
+            return service.archive_task(task_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Unknown task: {task_id}")
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+
+    @app.post("/api/focus/{session_id}/{action}")
+    def transition_focus(session_id: str, action: str):
+        if action not in {"pause", "resume", "complete", "cancel"}:
+            raise HTTPException(status_code=404, detail="Unknown Focus action")
+        try:
+            return service.transition_focus(session_id, action)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown Focus session")
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error))
 
     @app.post("/api/progress")
     def report_progress(event: ProgressReported):

@@ -30,6 +30,8 @@ Start the API:
 Open `http://127.0.0.1:8000` for the local execution dashboard. It supports
 task creation, progress check-ins, live structured Mira responses, persisted
 task state, and a visible Focus Mode timer.
+The second dashboard slice adds task editing and archival, Focus pause/resume/
+complete/cancel controls, and recent Focus-session history.
 
 In a second terminal, run the mock end-to-end interaction:
 

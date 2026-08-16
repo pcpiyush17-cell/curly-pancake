@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE TABLE IF NOT EXISTS focus_sessions (
     id TEXT PRIMARY KEY, task_id TEXT NOT NULL, planned_minutes INTEGER NOT NULL,
-    started_at TEXT NOT NULL, ended_at TEXT, status TEXT NOT NULL,
+    started_at TEXT NOT NULL, ended_at TEXT, paused_at TEXT, status TEXT NOT NULL,
     FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
 CREATE TABLE IF NOT EXISTS interaction_events (
@@ -58,6 +58,14 @@ class SQLiteRepository:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            focus_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(focus_sessions)")
+            }
+            if "paused_at" not in focus_columns:
+                connection.execute(
+                    "ALTER TABLE focus_sessions ADD COLUMN paused_at TEXT"
+                )
 
     def seed_demo_tasks(self) -> None:
         if self.list_tasks():
@@ -103,6 +111,25 @@ class SQLiteRepository:
             ).fetchall()
         return [_task(row) for row in rows]
 
+    def update_task(self, task_id: str, *, title: str | None, priority: int | None) -> Task:
+        task = self.get_task(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        if title is not None:
+            task.title = title
+        if priority is not None:
+            task.priority = priority
+        self.save_task(task)
+        return task
+
+    def archive_task(self, task_id: str) -> Task:
+        task = self.get_task(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        task.status = TaskStatus.ARCHIVED
+        self.save_task(task)
+        return task
+
     def update_task_progress(self, task_id: str, progress: float) -> Task:
         task = self.get_task(task_id)
         if task is None:
@@ -123,21 +150,49 @@ class SQLiteRepository:
             )
             connection.execute(
                 """INSERT INTO focus_sessions
-                (id,task_id,planned_minutes,started_at,ended_at,status)
-                VALUES (?,?,?,?,?,?)""",
+                (id,task_id,planned_minutes,started_at,ended_at,paused_at,status)
+                VALUES (?,?,?,?,?,?,?)""",
                 (
                     session.id, session.task_id, session.planned_minutes,
-                    _dt(session.started_at), _dt(session.ended_at), session.status,
+                    _dt(session.started_at), _dt(session.ended_at),
+                    _dt(session.paused_at), session.status,
                 ),
             )
 
     def active_focus_session(self) -> FocusSession | None:
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT * FROM focus_sessions WHERE status='active' "
+                "SELECT * FROM focus_sessions WHERE status IN ('active','paused') "
                 "ORDER BY started_at DESC LIMIT 1"
             ).fetchone()
         return FocusSession(**dict(row)) if row else None
+
+    def get_focus_session(self, session_id: str) -> FocusSession | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM focus_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+        return FocusSession(**dict(row)) if row else None
+
+    def save_focus_session(self, session: FocusSession) -> FocusSession:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE focus_sessions SET started_at=?, ended_at=?, paused_at=?,
+                status=? WHERE id=?""",
+                (
+                    _dt(session.started_at), _dt(session.ended_at),
+                    _dt(session.paused_at), session.status, session.id,
+                ),
+            )
+        return session
+
+    def focus_history(self, limit: int = 10) -> list[FocusSession]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM focus_sessions ORDER BY started_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [FocusSession(**dict(row)) for row in rows]
 
     def record_event(self, session_id: str, event_type: str, payload: dict) -> None:
         with self.connect() as connection:
