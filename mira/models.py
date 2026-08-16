@@ -116,7 +116,44 @@ class Memory(BaseModel):
     kind: Literal["preference", "pattern", "fact", "reflection"]
     content: str
     importance: float = Field(default=0.5, ge=0, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    source: Literal["user", "reflection", "inferred"] = "user"
+    expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class MemoryCreate(BaseModel):
+    kind: Literal["preference", "pattern", "fact", "reflection"]
+    content: str = Field(min_length=1, max_length=500)
+    importance: float = Field(default=0.5, ge=0, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    expires_at: datetime | None = None
+
+    @field_validator("content")
+    @classmethod
+    def memory_content_is_not_blank(cls, value: str) -> str:
+        content = value.strip()
+        if not content:
+            raise ValueError("content must not be blank")
+        return content
+
+
+class MemoryUpdate(BaseModel):
+    content: str | None = Field(default=None, min_length=1, max_length=500)
+    importance: float | None = Field(default=None, ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    expires_at: datetime | None = None
+
+    @field_validator("content")
+    @classmethod
+    def updated_memory_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        content = value.strip()
+        if not content:
+            raise ValueError("content must not be blank")
+        return content
 
 
 class FocusSession(BaseModel):
@@ -207,5 +244,6 @@ class SessionSnapshot(BaseModel):
     tasks: list[Task]
     goals: list[Goal] = Field(default_factory=list)
     commitments: list[Commitment] = Field(default_factory=list)
+    memories: list[Memory] = Field(default_factory=list)
     active_focus_session: FocusSession | None = None
     focus_history: list[FocusSession] = Field(default_factory=list)

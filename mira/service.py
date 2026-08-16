@@ -11,6 +11,9 @@ from mira.models import (
     Commitment,
     CommitmentCreate,
     MiraResponse,
+    Memory,
+    MemoryCreate,
+    MemoryUpdate,
     ProgressReported,
     SessionSnapshot,
     Task,
@@ -68,6 +71,46 @@ class MiraService:
     def resolve_commitment(self, commitment_id: str, kept: bool) -> Commitment:
         return self.repository.resolve_commitment(commitment_id, kept)
 
+    def create_memory(self, data: MemoryCreate) -> Memory:
+        return self.repository.create_memory(
+            Memory(
+                id=f"memory-{uuid4().hex[:12]}",
+                kind=data.kind,
+                content=data.content,
+                importance=data.importance,
+                confidence=data.confidence,
+                source="user",
+                expires_at=data.expires_at,
+            )
+        )
+
+    def update_memory(self, memory_id: str, data: MemoryUpdate) -> Memory:
+        return self.repository.update_memory(
+            memory_id,
+            content=data.content,
+            importance=data.importance,
+            confidence=data.confidence,
+            expires_at=data.expires_at,
+        )
+
+    def delete_memory(self, memory_id: str) -> None:
+        self.repository.delete_memory(memory_id)
+
+    def relevant_memories(self, text: str, limit: int = 5) -> list[Memory]:
+        words = {word.strip(".,!?;:'\"").lower() for word in text.split()}
+        words = {word for word in words if len(word) >= 3}
+        scored: list[tuple[float, Memory]] = []
+        for memory in self.repository.list_memories():
+            memory_words = {
+                word.strip(".,!?;:'\"").lower() for word in memory.content.split()
+            }
+            overlap = len(words & memory_words)
+            score = overlap * 2 + memory.importance + memory.confidence * 0.5
+            if overlap or memory.importance >= 0.8:
+                scored.append((score, memory))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [memory for _, memory in scored[:limit]]
+
     def archive_task(self, task_id: str) -> Task:
         active_focus = self.repository.active_focus_session()
         if active_focus and active_focus.task_id == task_id:
@@ -115,6 +158,9 @@ class MiraService:
             current_task=task,
             goals=self.repository.list_goals(),
             commitments=self.repository.list_commitments(),
+            relevant_memories=self.relevant_memories(
+                f"{event.transcript} {task.title}"
+            ),
             active_focus_session=focus or self.repository.active_focus_session(),
         )
         response = self.reasoning.respond(context)
@@ -135,6 +181,7 @@ class MiraService:
             ],
             goals=self.repository.list_goals(),
             commitments=self.repository.list_commitments(),
+            memories=self.repository.list_memories(),
             active_focus_session=self.repository.active_focus_session(),
             focus_history=self.repository.focus_history(),
         )

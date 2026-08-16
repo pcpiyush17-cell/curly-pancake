@@ -1,4 +1,4 @@
-const state = { tasks: [], goals: [], commitments: [], socket: null, focus: null, history: [], timerHandle: null };
+const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null };
 const $ = (id) => document.getElementById(id);
 
 function toast(message) {
@@ -31,7 +31,7 @@ function escapeHtml(value) {
 }
 
 function applySnapshot(snapshot) {
-  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderHistory();
+  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.memories = snapshot.memories || []; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderMemories(); renderHistory();
   if (state.focus) startTimer(state.focus); else resetTimer();
 }
 
@@ -47,6 +47,16 @@ function renderCommitments() {
   document.querySelectorAll(".keep-commitment").forEach(button => button.addEventListener("click", () => resolveCommitment(button.dataset.id, "kept")));
   document.querySelectorAll(".miss-commitment").forEach(button => button.addEventListener("click", () => resolveCommitment(button.dataset.id, "missed")));
 }
+
+function renderMemories() {
+  $("memory-count").textContent = `${state.memories.length} MEMORIES`;
+  $("memory-list").innerHTML = state.memories.map(memory => `<div class="memory"><div><strong>${escapeHtml(memory.content)}</strong><br><small>${memory.kind} · source ${memory.source} · confidence ${Math.round(memory.confidence*100)}% · importance ${Math.round(memory.importance*100)}%${memory.expires_at ? ` · expires ${new Date(memory.expires_at).toLocaleDateString()}` : ""}</small></div><span class="memory-actions"><button class="quiet edit-memory" data-id="${memory.id}">Correct</button><button class="danger delete-memory" data-id="${memory.id}">Delete</button></span></div>`).join("") || `<p class="muted">Nothing stored. Mira will not invent durable memories.</p>`;
+  document.querySelectorAll(".edit-memory").forEach(button => button.addEventListener("click", () => editMemory(button.dataset.id)));
+  document.querySelectorAll(".delete-memory").forEach(button => button.addEventListener("click", () => deleteMemory(button.dataset.id)));
+}
+
+async function editMemory(id) { const memory = state.memories.find(item => item.id === id); const content = prompt("Correct this memory", memory.content); if (content === null) return; const response = await fetch(`/api/memories/${id}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({content})}); if (!response.ok) return toast("Memory could not be corrected."); Object.assign(memory, await response.json()); renderMemories(); }
+async function deleteMemory(id) { if (!confirm("Delete this memory permanently?")) return; const response = await fetch(`/api/memories/${id}`, {method:"DELETE"}); if (!response.ok) return toast("Memory could not be deleted."); state.memories = state.memories.filter(item => item.id !== id); renderMemories(); }
 
 async function setGoalStatus(id, status) { const response = await fetch(`/api/goals/${id}/${status}`, {method:"POST"}); if (!response.ok) return toast("Goal could not be updated."); const goal = await response.json(); Object.assign(state.goals.find(item => item.id === id), goal); renderGoals(); }
 async function resolveCommitment(id, result) { const response = await fetch(`/api/commitments/${id}/${result}`, {method:"POST"}); if (!response.ok) return toast("Commitment could not be updated."); const item = await response.json(); Object.assign(state.commitments.find(existing => existing.id === id), item); renderCommitments(); }
@@ -164,6 +174,7 @@ $("task-form").addEventListener("submit", async e => {
 });
 $("goal-form").addEventListener("submit", async e => { e.preventDefault(); const response = await fetch("/api/goals", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:$("goal-title").value})}); if (!response.ok) return toast("Goal could not be added."); state.goals.unshift(await response.json()); renderGoals(); e.target.reset(); });
 $("commitment-form").addEventListener("submit", async e => { e.preventDefault(); const due = $("commitment-due").value; const response = await fetch("/api/commitments", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({statement:$("commitment-statement").value,task_id:$("commitment-task").value || null,due_at:due ? new Date(due).toISOString() : null})}); if (!response.ok) return toast("Commitment could not be added."); state.commitments.unshift(await response.json()); renderCommitments(); e.target.reset(); });
+$("memory-form").addEventListener("submit", async e => { e.preventDefault(); const days = Number($("memory-expiry").value || 0); const expiresAt = days ? new Date(Date.now()+days*86400000).toISOString() : null; const response = await fetch("/api/memories", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:$("memory-kind").value,content:$("memory-content").value,importance:Number($("memory-importance").value)/100,confidence:1,expires_at:expiresAt})}); if (!response.ok) return toast("Memory could not be added."); state.memories.unshift(await response.json()); renderMemories(); e.target.reset(); });
 $("report-form").addEventListener("submit", e => {
   e.preventDefault();
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return toast("Mira is reconnecting. Try again in a moment.");

@@ -16,6 +16,8 @@ from mira.models import (
     ClientEvent,
     CommitmentCreate,
     GoalCreate,
+    MemoryCreate,
+    MemoryUpdate,
     ProgressReported,
     SnapshotRequested,
     TaskCreate,
@@ -94,6 +96,24 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             return service.resolve_commitment(commitment_id, result == "kept")
         except KeyError:
             raise HTTPException(status_code=404, detail="Unknown commitment")
+
+    @app.post("/api/memories", status_code=201)
+    def create_memory(memory: MemoryCreate):
+        return service.create_memory(memory)
+
+    @app.patch("/api/memories/{memory_id}")
+    def update_memory(memory_id: str, memory: MemoryUpdate):
+        try:
+            return service.update_memory(memory_id, memory)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown memory")
+
+    @app.delete("/api/memories/{memory_id}", status_code=204)
+    def delete_memory(memory_id: str):
+        try:
+            service.delete_memory(memory_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown memory")
 
     @app.patch("/api/tasks/{task_id}")
     def update_task(task_id: str, task: TaskUpdate):

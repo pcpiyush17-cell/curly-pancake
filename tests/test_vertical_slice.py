@@ -279,3 +279,52 @@ def test_persona_instructions_enforce_concise_user_facing_speech():
     assert "at most two short sentences" in normalized
     assert "Never expose internal task IDs" in normalized
     assert 'phrase "transcript"' in normalized
+
+
+def test_user_controlled_memory_lifecycle_and_retrieval(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/memories",
+            json={
+                "kind": "preference",
+                "content": "I focus better on DSA before checking messages",
+                "importance": 0.8,
+                "confidence": 1,
+            },
+        )
+        assert created.status_code == 201
+        memory = created.json()
+        assert memory["source"] == "user"
+
+        corrected = client.patch(
+            f"/api/memories/{memory['id']}",
+            json={"content": "I focus better before checking messages"},
+        )
+        assert corrected.status_code == 200
+        assert corrected.json()["content"] == "I focus better before checking messages"
+
+        relevant = app.state.service.relevant_memories("starting focused work")
+        assert relevant[0].id == memory["id"]
+        assert client.get("/api/snapshot").json()["memories"][0]["id"] == memory["id"]
+
+        deleted = client.delete(f"/api/memories/{memory['id']}")
+        assert deleted.status_code == 204
+        assert client.get("/api/snapshot").json()["memories"] == []
+
+
+def test_expired_memory_is_not_retrieved(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/memories",
+            json={
+                "kind": "reflection",
+                "content": "Temporary DSA blocker",
+                "importance": 1,
+                "expires_at": "2020-01-01T00:00:00Z",
+            },
+        )
+        assert created.status_code == 201
+        assert app.state.service.relevant_memories("DSA blocker") == []
+        assert client.get("/api/snapshot").json()["memories"] == []

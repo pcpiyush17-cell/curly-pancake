@@ -5,7 +5,15 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from mira.models import Commitment, FocusSession, Goal, Task, TaskStatus, utc_now
+from mira.models import (
+    Commitment,
+    FocusSession,
+    Goal,
+    Memory,
+    Task,
+    TaskStatus,
+    utc_now,
+)
 
 
 SCHEMA = """
@@ -33,7 +41,9 @@ CREATE TABLE IF NOT EXISTS commitments (
 );
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY, kind TEXT NOT NULL, content TEXT NOT NULL,
-    importance REAL NOT NULL, created_at TEXT NOT NULL
+    importance REAL NOT NULL, confidence REAL NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'user', expires_at TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS focus_sessions (
     id TEXT PRIMARY KEY, task_id TEXT NOT NULL, planned_minutes INTEGER NOT NULL,
@@ -73,6 +83,23 @@ class SQLiteRepository:
             }
             if "goal_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN goal_id TEXT")
+            memory_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(memories)")
+            }
+            for name, definition in {
+                "confidence": "REAL NOT NULL DEFAULT 1",
+                "source": "TEXT NOT NULL DEFAULT 'user'",
+                "expires_at": "TEXT",
+                "updated_at": "TEXT",
+            }.items():
+                if name not in memory_columns:
+                    connection.execute(
+                        f"ALTER TABLE memories ADD COLUMN {name} {definition}"
+                    )
+            connection.execute(
+                "UPDATE memories SET updated_at=created_at WHERE updated_at IS NULL"
+            )
 
     def seed_demo_tasks(self) -> None:
         if self.list_tasks():
@@ -200,6 +227,74 @@ class SQLiteRepository:
         if not changed or row is None:
             raise KeyError(commitment_id)
         return _commitment(row)
+
+    def create_memory(self, memory: Memory) -> Memory:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO memories
+                (id,kind,content,importance,confidence,source,expires_at,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    memory.id, memory.kind, memory.content, memory.importance,
+                    memory.confidence, memory.source, _dt(memory.expires_at),
+                    _dt(memory.created_at), _dt(memory.updated_at),
+                ),
+            )
+        return memory
+
+    def list_memories(self, include_expired: bool = False) -> list[Memory]:
+        query = "SELECT * FROM memories"
+        params: tuple[str, ...] = ()
+        if not include_expired:
+            query += " WHERE expires_at IS NULL OR expires_at > ?"
+            params = (_dt(utc_now()) or "",)
+        query += " ORDER BY importance DESC, updated_at DESC"
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [Memory(**dict(row)) for row in rows]
+
+    def update_memory(
+        self,
+        memory_id: str,
+        *,
+        content: str | None,
+        importance: float | None,
+        confidence: float | None,
+        expires_at,
+    ) -> Memory:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM memories WHERE id=?", (memory_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(memory_id)
+            memory = Memory(**dict(row))
+            if content is not None:
+                memory.content = content
+            if importance is not None:
+                memory.importance = importance
+            if confidence is not None:
+                memory.confidence = confidence
+            if expires_at is not None:
+                memory.expires_at = expires_at
+            memory.updated_at = utc_now()
+            connection.execute(
+                """UPDATE memories SET content=?,importance=?,confidence=?,
+                expires_at=?,updated_at=? WHERE id=?""",
+                (
+                    memory.content, memory.importance, memory.confidence,
+                    _dt(memory.expires_at), _dt(memory.updated_at), memory.id,
+                ),
+            )
+        return memory
+
+    def delete_memory(self, memory_id: str) -> None:
+        with self.connect() as connection:
+            changed = connection.execute(
+                "DELETE FROM memories WHERE id=?", (memory_id,)
+            ).rowcount
+        if not changed:
+            raise KeyError(memory_id)
 
     def archive_task(self, task_id: str) -> Task:
         task = self.get_task(task_id)
