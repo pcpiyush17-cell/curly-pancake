@@ -32,6 +32,8 @@ task creation, progress check-ins, live structured Mira responses, persisted
 task state, and a visible Focus Mode timer.
 The second dashboard slice adds task editing and archival, Focus pause/resume/
 complete/cancel controls, and recent Focus-session history.
+The third slice introduces goals, goal-linked tasks, explicit commitments with
+due times, and kept/missed outcomes for future evidence-based coaching.
 
 In a second terminal, run the mock end-to-end interaction:
 

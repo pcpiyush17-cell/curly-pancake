@@ -13,6 +13,8 @@ from pydantic import TypeAdapter, ValidationError
 from mira.db import SQLiteRepository
 from mira.models import (
     ClientEvent,
+    CommitmentCreate,
+    GoalCreate,
     ProgressReported,
     SnapshotRequested,
     TaskCreate,
@@ -54,6 +56,35 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.post("/api/tasks", status_code=201)
     def create_task(task: TaskCreate):
         return service.create_task(task)
+
+    @app.post("/api/goals", status_code=201)
+    def create_goal(goal: GoalCreate):
+        return service.create_goal(goal)
+
+    @app.post("/api/goals/{goal_id}/{status}")
+    def update_goal_status(goal_id: str, status: str):
+        if status not in {"active", "achieved", "paused"}:
+            raise HTTPException(status_code=404, detail="Unknown goal status")
+        try:
+            return service.update_goal_status(goal_id, status)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown goal")
+
+    @app.post("/api/commitments", status_code=201)
+    def create_commitment(commitment: CommitmentCreate):
+        try:
+            return service.create_commitment(commitment)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown task")
+
+    @app.post("/api/commitments/{commitment_id}/{result}")
+    def resolve_commitment(commitment_id: str, result: str):
+        if result not in {"kept", "missed"}:
+            raise HTTPException(status_code=404, detail="Unknown commitment result")
+        try:
+            return service.resolve_commitment(commitment_id, result == "kept")
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown commitment")
 
     @app.patch("/api/tasks/{task_id}")
     def update_task(task_id: str, task: TaskUpdate):

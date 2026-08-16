@@ -152,3 +152,43 @@ def test_focus_lifecycle_and_history(tmp_path):
         assert snapshot["active_focus_session"] is None
         assert snapshot["focus_history"][0]["id"] == focus_id
         assert snapshot["focus_history"][0]["status"] == "completed"
+
+
+def test_goal_and_commitment_lifecycle(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        goal_response = client.post("/api/goals", json={"title": "Ship Mira v0.1"})
+        assert goal_response.status_code == 201
+        goal = goal_response.json()
+
+        task_response = client.post(
+            "/api/tasks",
+            json={"title": "Write release checklist", "priority": 1, "goal_id": goal["id"]},
+        )
+        assert task_response.status_code == 201
+        task = task_response.json()
+        assert task["goal_id"] == goal["id"]
+
+        commitment_response = client.post(
+            "/api/commitments",
+            json={
+                "statement": "Finish the checklist tonight",
+                "task_id": task["id"],
+                "due_at": "2026-08-16T22:00:00+05:30",
+            },
+        )
+        assert commitment_response.status_code == 201
+        commitment = commitment_response.json()
+        assert commitment["kept"] is None
+
+        resolved = client.post(f"/api/commitments/{commitment['id']}/kept")
+        assert resolved.status_code == 200
+        assert resolved.json()["kept"] is True
+
+        achieved = client.post(f"/api/goals/{goal['id']}/achieved")
+        assert achieved.status_code == 200
+        assert achieved.json()["status"] == "achieved"
+
+        snapshot = client.get("/api/snapshot").json()
+        assert snapshot["goals"][0]["id"] == goal["id"]
+        assert snapshot["commitments"][0]["kept"] is True
