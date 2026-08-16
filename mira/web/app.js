@@ -63,6 +63,7 @@ function applyMira(response) {
   $("mira-state").textContent = response.state;
   $("mira-tone").textContent = `${response.tone} · intensity ${Math.round(response.tone_intensity * 100)}% · ${response.expression.primary.replaceAll("_", " ")}`;
   $("avatar").dataset.state = response.state;
+  setThinking(false);
   response.ui_actions.forEach(action => {
     if (action.type === "update_task") {
       const task = state.tasks.find(t => t.id === action.task_id);
@@ -71,6 +72,18 @@ function applyMira(response) {
     if (action.type === "start_focus_mode") startTimer({ id: action.focus_session_id, task_id: action.task_id, planned_minutes: action.duration_minutes, started_at: new Date().toISOString(), status: "active" });
   });
   renderTasks();
+}
+
+function setThinking(thinking) {
+  const button = $("report-submit");
+  button.disabled = thinking;
+  button.textContent = thinking ? "Mira is thinking…" : "Report to Mira";
+  if (thinking) {
+    $("mira-state").textContent = "THINKING";
+    $("mira-tone").textContent = "considering the update";
+    $("mira-speech").textContent = "…";
+    $("avatar").dataset.state = "THINKING";
+  }
 }
 
 function startTimer(focus) {
@@ -128,9 +141,17 @@ function connect() {
   state.socket.onmessage = ({data}) => {
     const message = JSON.parse(data);
     if (message.type === "session.ready" || message.type === "session.snapshot") applySnapshot(message.payload);
+    if (message.type === "mira.thinking") setThinking(true);
     if (message.type === "mira.response") applyMira(message.payload);
-    if (message.type === "error") toast(message.detail || "Mira could not process that update.");
+    if (message.type === "error") { setThinking(false); toast(message.detail || "Mira could not process that update."); }
   };
+}
+
+async function loadReasoningStatus() {
+  const response = await fetch("/api/reasoning/status");
+  if (!response.ok) return;
+  const status = await response.json();
+  $("reasoning-mode").textContent = `· ${status.configured_provider}`;
 }
 
 $("progress-label").textContent = `${$("report-progress").value}%`;
@@ -146,6 +167,7 @@ $("commitment-form").addEventListener("submit", async e => { e.preventDefault();
 $("report-form").addEventListener("submit", e => {
   e.preventDefault();
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return toast("Mira is reconnecting. Try again in a moment.");
+  setThinking(true);
   const startFocus = $("start-focus").checked;
   state.socket.send(JSON.stringify({
     type:"progress.reported", source:"text", task_id:$("report-task").value,
@@ -159,4 +181,4 @@ $("focus-toggle").addEventListener("click", () => transitionFocus(state.focus?.s
 $("focus-complete").addEventListener("click", () => transitionFocus("complete"));
 $("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
 
-connect();
+connect(); loadReasoningStatus();

@@ -19,14 +19,19 @@ from mira.models import (
     utc_now,
 )
 from mira.policy import DeterministicMiraPolicy
+from mira.reasoning import MiraContext, SafeReasoningEngine, build_reasoning_engine
 
 
 class MiraService:
     def __init__(
-        self, repository: SQLiteRepository, policy: DeterministicMiraPolicy
+        self,
+        repository: SQLiteRepository,
+        policy: DeterministicMiraPolicy,
+        reasoning: SafeReasoningEngine | None = None,
     ) -> None:
         self.repository = repository
         self.policy = policy
+        self.reasoning = reasoning or build_reasoning_engine(policy)
 
     def create_task(self, data: TaskCreate) -> Task:
         task = Task(
@@ -105,7 +110,14 @@ class MiraService:
             )
             self.repository.start_focus_session(focus)
 
-        response = self.policy.respond(task, focus)
+        context = MiraContext(
+            event=event,
+            current_task=task,
+            goals=self.repository.list_goals(),
+            commitments=self.repository.list_commitments(),
+            active_focus_session=focus or self.repository.active_focus_session(),
+        )
+        response = self.reasoning.respond(context)
         self.repository.record_event(
             session_id, event.type, event.model_dump(mode="json")
         )

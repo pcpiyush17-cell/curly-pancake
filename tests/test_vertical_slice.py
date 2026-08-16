@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
 
 from mira.main import create_app
+from mira.models import Expression, Gesture, MiraResponse, MiraState
+from mira.policy import DeterministicMiraPolicy
+from mira.reasoning import DeterministicReasoningProvider, SafeReasoningEngine
 
 
 def test_progress_focus_vertical_slice(tmp_path):
@@ -22,6 +25,9 @@ def test_progress_focus_vertical_slice(tmp_path):
                     "focus_minutes": 25,
                 }
             )
+            thinking = socket.receive_json()
+            assert thinking["type"] == "mira.thinking"
+            assert thinking["payload"]["task_id"] == "task-ml"
             message = socket.receive_json()
 
             assert message["type"] == "mira.response"
@@ -192,3 +198,84 @@ def test_goal_and_commitment_lifecycle(tmp_path):
         snapshot = client.get("/api/snapshot").json()
         assert snapshot["goals"][0]["id"] == goal["id"]
         assert snapshot["commitments"][0]["kept"] is True
+
+
+class StubReasoningProvider:
+    name = "stub"
+
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.context = None
+
+    def generate(self, context):
+        self.context = context
+        if self.fail:
+            raise RuntimeError("provider unavailable")
+        return MiraResponse(
+            speech="You made progress. Now name the part you are avoiding.",
+            state=MiraState.CHALLENGING,
+            tone="wry",
+            tone_intensity=0.55,
+            expression=Expression(primary="raised_eyebrow", intensity=0.4),
+            gesture=Gesture(type="subtle_head_tilt", intensity=0.25),
+            ui_actions=[],
+        )
+
+
+def test_reasoning_provider_gets_context_but_not_action_authority(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    stub = StubReasoningProvider()
+    fallback = DeterministicReasoningProvider(DeterministicMiraPolicy())
+    app.state.service.reasoning = SafeReasoningEngine(stub, fallback)
+    with TestClient(app) as client:
+        client.post("/api/goals", json={"title": "Ship Mira"})
+        client.post(
+            "/api/commitments",
+            json={"statement": "Finish ML today", "task_id": "task-ml"},
+        )
+        response = client.post(
+            "/api/progress",
+            json={
+                "source": "text",
+                "task_id": "task-ml",
+                "transcript": "I made some progress.",
+                "progress": 0.5,
+            },
+        ).json()
+
+        assert response["speech"].startswith("You made progress")
+        assert response["ui_actions"][0]["type"] == "update_task"
+        assert len(stub.context.goals) == 1
+        assert len(stub.context.commitments) == 1
+
+
+def test_reasoning_provider_failure_uses_deterministic_fallback(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    stub = StubReasoningProvider(fail=True)
+    fallback = DeterministicReasoningProvider(DeterministicMiraPolicy())
+    app.state.service.reasoning = SafeReasoningEngine(stub, fallback)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/progress",
+            json={
+                "source": "text",
+                "task_id": "task-ml",
+                "transcript": "Nothing moved.",
+                "progress": 0,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["state"] == "CHALLENGING"
+        status = client.get("/api/reasoning/status").json()
+        assert status["last_provider"] == "deterministic"
+        assert status["last_error"]["type"] == "RuntimeError"
+        assert status["last_error"]["status_code"] is None
+
+
+def test_persona_instructions_enforce_concise_user_facing_speech():
+    from mira.reasoning import PERSONA_INSTRUCTIONS
+
+    normalized = " ".join(PERSONA_INSTRUCTIONS.split())
+    assert "at most two short sentences" in normalized
+    assert "Never expose internal task IDs" in normalized
+    assert 'phrase "transcript"' in normalized

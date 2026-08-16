@@ -44,6 +44,7 @@ blockquote { margin:0 0 18px; font-family:Georgia,serif; font-size:clamp(1.45rem
 input,select,textarea,button { font:inherit; color:var(--ink); border:1px solid var(--line); border-radius:10px; background:#111616; padding:11px 12px; }
 button { cursor:pointer; font-weight:700; background:var(--ink); color:#111; border-color:transparent; }
 button:hover { transform:translateY(-1px); }
+button:disabled { cursor:wait; opacity:.62; transform:none; }
 .task-list { display:grid; gap:8px; }
 .task { display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center; padding:14px; background:rgba(255,255,255,.025); border:1px solid var(--line); border-radius:12px; }
 .task .dot { width:9px; height:9px; border:2px solid var(--lime); border-radius:50%; }
