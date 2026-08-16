@@ -16,6 +16,7 @@ class TaskStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     BLOCKED = "blocked"
+    ARCHIVED = "archived"
 
 
 class MiraState(StrEnum):
@@ -44,6 +45,21 @@ class TaskCreate(BaseModel):
     @field_validator("title")
     @classmethod
     def title_is_not_blank(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("title must not be blank")
+        return title
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    priority: int | None = Field(default=None, ge=1, le=5)
+
+    @field_validator("title")
+    @classmethod
+    def updated_title_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         title = value.strip()
         if not title:
             raise ValueError("title must not be blank")
@@ -80,7 +96,8 @@ class FocusSession(BaseModel):
     planned_minutes: int = Field(ge=1, le=240)
     started_at: datetime = Field(default_factory=utc_now)
     ended_at: datetime | None = None
-    status: Literal["active", "completed", "cancelled"] = "active"
+    paused_at: datetime | None = None
+    status: Literal["active", "paused", "completed", "cancelled"] = "active"
 
 
 class Expression(BaseModel):
@@ -160,3 +177,4 @@ ClientEvent = Annotated[
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
     active_focus_session: FocusSession | None = None
+    focus_history: list[FocusSession] = Field(default_factory=list)

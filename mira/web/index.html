@@ -37,6 +37,15 @@
         <div id="timer" class="timer">25:00</div>
         <div class="progress-track"><div id="timer-progress"></div></div>
         <p id="focus-detail" class="muted">Complete a task and ask Mira to start the next focus block.</p>
+        <div id="focus-controls" class="focus-controls" hidden>
+          <button id="focus-toggle" type="button">Pause</button>
+          <button id="focus-complete" type="button" class="quiet">Complete</button>
+          <button id="focus-cancel" type="button" class="danger">Cancel</button>
+        </div>
+        <div class="history-block">
+          <p class="eyebrow">RECENT SESSIONS</p>
+          <div id="focus-history" class="history-list"><p class="muted">No sessions yet.</p></div>
+        </div>
       </article>
 
       <article class="panel task-panel">

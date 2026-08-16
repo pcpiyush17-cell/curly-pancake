@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import uuid4
 
 from mira.db import SQLiteRepository
@@ -10,6 +11,8 @@ from mira.models import (
     SessionSnapshot,
     Task,
     TaskCreate,
+    TaskUpdate,
+    utc_now,
 )
 from mira.policy import DeterministicMiraPolicy
 
@@ -28,6 +31,37 @@ class MiraService:
             priority=data.priority,
         )
         return self.repository.create_task(task)
+
+    def update_task(self, task_id: str, data: TaskUpdate) -> Task:
+        return self.repository.update_task(
+            task_id, title=data.title, priority=data.priority
+        )
+
+    def archive_task(self, task_id: str) -> Task:
+        active_focus = self.repository.active_focus_session()
+        if active_focus and active_focus.task_id == task_id:
+            raise ValueError("End the active Focus session before archiving its task")
+        return self.repository.archive_task(task_id)
+
+    def transition_focus(self, session_id: str, action: str) -> FocusSession:
+        session = self.repository.get_focus_session(session_id)
+        if session is None:
+            raise KeyError(session_id)
+        now = utc_now()
+        if action == "pause" and session.status == "active":
+            session.status = "paused"
+            session.paused_at = now
+        elif action == "resume" and session.status == "paused" and session.paused_at:
+            session.started_at += now - session.paused_at
+            session.status = "active"
+            session.paused_at = None
+        elif action in {"complete", "cancel"} and session.status in {"active", "paused"}:
+            session.status = "completed" if action == "complete" else "cancelled"
+            session.ended_at = now
+            session.paused_at = None
+        else:
+            raise ValueError(f"Cannot {action} a {session.status} Focus session")
+        return self.repository.save_focus_session(session)
 
     def report_progress(
         self, session_id: str, event: ProgressReported
@@ -56,6 +90,11 @@ class MiraService:
 
     def snapshot(self) -> SessionSnapshot:
         return SessionSnapshot(
-            tasks=self.repository.list_tasks(),
+            tasks=[
+                task
+                for task in self.repository.list_tasks()
+                if task.status != "archived"
+            ],
             active_focus_session=self.repository.active_focus_session(),
+            focus_history=self.repository.focus_history(),
         )
