@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS interaction_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
     event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS inbound_events (
+    event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS outbound_events (
+    event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+    envelope_json TEXT NOT NULL, requires_ack INTEGER NOT NULL,
+    acknowledged_at TEXT, acknowledgement_status TEXT, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_outbound_events_pending
+ON outbound_events(session_id, acknowledged_at) WHERE requires_ack = 1;
 """
 
 
@@ -100,6 +110,7 @@ class SQLiteRepository:
             connection.execute(
                 "UPDATE memories SET updated_at=created_at WHERE updated_at IS NULL"
             )
+            connection.execute("PRAGMA optimize")
 
     def seed_demo_tasks(self) -> None:
         if self.list_tasks():
@@ -375,6 +386,59 @@ class SQLiteRepository:
                 (session_id,event_type,payload_json,created_at) VALUES (?,?,?,?)""",
                 (session_id, event_type, json.dumps(payload, default=str), _dt(utc_now())),
             )
+
+    def claim_inbound_event(self, event_id: str, session_id: str) -> bool:
+        try:
+            with self.connect() as connection:
+                connection.execute(
+                    "INSERT INTO inbound_events (event_id,session_id,created_at) VALUES (?,?,?)",
+                    (event_id, session_id, _dt(utc_now())),
+                )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def record_outbound_envelope(self, envelope: dict) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO outbound_events
+                (event_id,session_id,envelope_json,requires_ack,created_at)
+                VALUES (?,?,?,?,?)""",
+                (
+                    envelope["event_id"], envelope["session_id"],
+                    json.dumps(envelope, default=str), int(envelope["requires_ack"]),
+                    envelope["timestamp"],
+                ),
+            )
+
+    def acknowledge_outbound_event(
+        self, event_id: str, session_id: str, status: str
+    ) -> bool:
+        with self.connect() as connection:
+            if status == "applied":
+                changed = connection.execute(
+                    """UPDATE outbound_events SET acknowledged_at=?,
+                    acknowledgement_status=? WHERE event_id=? AND session_id=?
+                    AND acknowledged_at IS NULL""",
+                    (_dt(utc_now()), status, event_id, session_id),
+                ).rowcount
+            else:
+                changed = connection.execute(
+                    """UPDATE outbound_events SET acknowledgement_status=?
+                    WHERE event_id=? AND session_id=? AND acknowledged_at IS NULL""",
+                    (status, event_id, session_id),
+                ).rowcount
+        return bool(changed)
+
+    def pending_outbound_envelopes(self, session_id: str) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT envelope_json FROM outbound_events
+                WHERE session_id=? AND requires_ack=1 AND acknowledged_at IS NULL
+                ORDER BY created_at""",
+                (session_id,),
+            ).fetchall()
+        return [json.loads(row["envelope_json"]) for row in rows]
 
 
 def _dt(value: datetime | None) -> str | None:

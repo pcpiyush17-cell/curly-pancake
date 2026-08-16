@@ -2,13 +2,39 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class ServerEnvelope(BaseModel):
+    protocol_version: Literal["0.1"]
+    event_id: str = Field(min_length=1, max_length=100)
+    session_id: str = Field(min_length=1, max_length=100)
+    type: str = Field(min_length=1, max_length=100)
+    timestamp: datetime
+    correlation_id: str | None = Field(default=None, max_length=100)
+    requires_ack: bool
+    payload: dict[str, Any]
+
+
+class ClientEnvelope(BaseModel):
+    protocol_version: Literal["0.1"]
+    event_id: str = Field(min_length=1, max_length=100)
+    session_id: str = Field(min_length=1, max_length=100)
+    type: str = Field(min_length=1, max_length=100)
+    timestamp: datetime
+    correlation_id: str | None = Field(default=None, max_length=100)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClientAck(BaseModel):
+    event_id: str = Field(min_length=1, max_length=100)
+    status: Literal["applied", "failed"]
 
 
 class TaskStatus(StrEnum):

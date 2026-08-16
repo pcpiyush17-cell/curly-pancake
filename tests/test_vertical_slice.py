@@ -1,9 +1,24 @@
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from mira.main import create_app
 from mira.models import Expression, Gesture, MiraResponse, MiraState
 from mira.policy import DeterministicMiraPolicy
 from mira.reasoning import DeterministicReasoningProvider, SafeReasoningEngine
+
+
+def versioned_event(session_id, event_type, payload=None, event_id=None):
+    return {
+        "protocol_version": "0.1",
+        "event_id": event_id or f"test-{uuid4().hex}",
+        "session_id": session_id,
+        "type": event_type,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "correlation_id": None,
+        "payload": payload or {},
+    }
 
 
 def test_progress_focus_vertical_slice(tmp_path):
@@ -337,10 +352,9 @@ def test_voice_lifecycle_events_are_accepted(tmp_path):
             assert socket.receive_json()["type"] == "session.ready"
             socket.send_json({"type": "user.speech.started"})
             started = socket.receive_json()
-            assert started == {
-                "type": "voice.event.recorded",
-                "payload": {"event_type": "user.speech.started"},
-            }
+            assert started["type"] == "voice.event.recorded"
+            assert started["payload"] == {"event_type": "user.speech.started"}
+            assert started["protocol_version"] == "0.1"
             socket.send_json(
                 {"type": "user.speech.completed", "transcript": "halfway done"}
             )
@@ -349,6 +363,86 @@ def test_voice_lifecycle_events_are_accepted(tmp_path):
             socket.send_json({"type": "mira.speech.interrupted"})
             interrupted = socket.receive_json()
             assert interrupted["payload"]["event_type"] == "mira.speech.interrupted"
+
+
+def test_versioned_response_is_acknowledged(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    session_id = "reliable-client"
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/ws/session/{session_id}") as socket:
+            ready = socket.receive_json()
+            assert ready["protocol_version"] == "0.1"
+            assert ready["session_id"] == session_id
+            request = versioned_event(
+                session_id,
+                "progress.reported",
+                {
+                    "source": "text", "task_id": "task-dsa",
+                    "transcript": "Halfway done.", "progress": 0.5,
+                },
+            )
+            socket.send_json(request)
+            assert socket.receive_json()["type"] == "mira.thinking"
+            response = socket.receive_json()
+            assert response["type"] == "mira.response"
+            assert response["requires_ack"] is True
+            assert response["correlation_id"] == request["event_id"]
+            socket.send_json(
+                versioned_event(
+                    session_id, "client.ack",
+                    {"event_id": response["event_id"], "status": "applied"},
+                )
+            )
+            recorded = socket.receive_json()
+            assert recorded["type"] == "client.ack.recorded"
+            assert recorded["payload"]["recorded"] is True
+            assert app.state.repository.pending_outbound_envelopes(session_id) == []
+
+
+def test_unacknowledged_response_replays_after_reconnect(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    session_id = "reconnect-client"
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/ws/session/{session_id}") as socket:
+            socket.receive_json()
+            socket.send_json(
+                versioned_event(
+                    session_id, "progress.reported",
+                    {
+                        "source": "voice", "task_id": "task-ml",
+                        "transcript": "Done.", "progress": 1,
+                    },
+                )
+            )
+            socket.receive_json()
+            response = socket.receive_json()
+
+        with client.websocket_connect(f"/ws/session/{session_id}") as socket:
+            assert socket.receive_json()["type"] == "session.ready"
+            replay = socket.receive_json()
+            assert replay == response
+            socket.send_json(
+                versioned_event(
+                    session_id, "client.ack",
+                    {"event_id": replay["event_id"], "status": "applied"},
+                )
+            )
+            assert socket.receive_json()["payload"]["recorded"] is True
+
+
+def test_duplicate_versioned_client_event_is_ignored(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    session_id = "duplicate-client"
+    event = versioned_event(session_id, "session.snapshot.requested")
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/ws/session/{session_id}") as socket:
+            socket.receive_json()
+            socket.send_json(event)
+            assert socket.receive_json()["type"] == "session.snapshot"
+            socket.send_json(event)
+            duplicate = socket.receive_json()
+            assert duplicate["type"] == "client.duplicate"
+            assert duplicate["payload"] == {"event_id": event["event_id"], "ignored": True}
 
 
 class StubSpeechProvider:
