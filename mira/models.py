@@ -214,6 +214,10 @@ class MiraResponse(BaseModel):
     pause_before_ms: int = Field(default=0, ge=0, le=3000)
 
 
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
 class ProgressReported(BaseModel):
     type: Literal["progress.reported"] = "progress.reported"
     source: Literal["voice", "text"]
