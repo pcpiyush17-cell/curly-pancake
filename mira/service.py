@@ -19,6 +19,7 @@ from mira.models import (
     Task,
     TaskCreate,
     TaskUpdate,
+    VoiceLifecycleEvent,
     utc_now,
 )
 from mira.policy import DeterministicMiraPolicy
@@ -171,6 +172,13 @@ class MiraService:
             session_id, "mira.response", response.model_dump(mode="json")
         )
         return response
+
+    def record_voice_event(
+        self, session_id: str, event: VoiceLifecycleEvent
+    ) -> None:
+        self.repository.record_event(
+            session_id, event.type, event.model_dump(mode="json")
+        )
 
     def snapshot(self) -> SessionSnapshot:
         return SessionSnapshot(

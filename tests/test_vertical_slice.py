@@ -328,3 +328,24 @@ def test_expired_memory_is_not_retrieved(tmp_path):
         assert created.status_code == 201
         assert app.state.service.relevant_memories("DSA blocker") == []
         assert client.get("/api/snapshot").json()["memories"] == []
+
+
+def test_voice_lifecycle_events_are_accepted(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/session/voice-test") as socket:
+            assert socket.receive_json()["type"] == "session.ready"
+            socket.send_json({"type": "user.speech.started"})
+            started = socket.receive_json()
+            assert started == {
+                "type": "voice.event.recorded",
+                "payload": {"event_type": "user.speech.started"},
+            }
+            socket.send_json(
+                {"type": "user.speech.completed", "transcript": "halfway done"}
+            )
+            completed = socket.receive_json()
+            assert completed["payload"]["event_type"] == "user.speech.completed"
+            socket.send_json({"type": "mira.speech.interrupted"})
+            interrupted = socket.receive_json()
+            assert interrupted["payload"]["event_type"] == "mira.speech.interrupted"

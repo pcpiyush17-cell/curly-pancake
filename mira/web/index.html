@@ -67,6 +67,12 @@
       <article class="panel report-panel">
         <p class="eyebrow">PROGRESS CHECK-IN</p>
         <h2>What changed?</h2>
+        <div class="voice-bar">
+          <button id="mic-button" type="button" class="voice-button"><span id="mic-dot"></span><span id="mic-label">Start voice input</span></button>
+          <button id="stop-speaking" type="button" class="quiet" hidden>Stop Mira</button>
+          <label class="check"><input id="auto-speak" type="checkbox" checked> Speak responses</label>
+          <span id="voice-support" class="muted"></span>
+        </div>
         <form id="report-form">
           <label>Task<select id="report-task" required></select></label>
           <label>Your update<textarea id="report-text" rows="3" maxlength="2000" placeholder="I finished it, but the last section took longer than expected." required></textarea></label>
