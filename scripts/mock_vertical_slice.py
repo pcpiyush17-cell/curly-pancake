@@ -1,4 +1,4 @@
-"""Mock the Unreal/voice client against a running Mira server."""
+"""Legacy smoke client. Use simulated_unreal_client.py for protocol reliability."""
 
 import asyncio
 import json
@@ -30,4 +30,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

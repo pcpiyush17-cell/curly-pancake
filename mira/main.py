@@ -13,6 +13,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from mira.db import SQLiteRepository
 from mira.models import (
+    ClientAck,
+    ClientEnvelope,
     ClientEvent,
     CommitmentCreate,
     GoalCreate,
@@ -26,6 +28,7 @@ from mira.models import (
     VoiceLifecycleEvent,
 )
 from mira.policy import DeterministicMiraPolicy
+from mira.protocol import make_server_envelope
 from mira.service import MiraService
 from mira.speech import build_speech_provider
 
@@ -44,6 +47,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
     app = FastAPI(title="Mira v0.1", version="0.1.0", lifespan=lifespan)
     app.state.service = service
+    app.state.repository = repository
     app.state.speech = build_speech_provider()
     web_dir = Path(__file__).parent / "web"
     app.mount("/static", StaticFiles(directory=web_dir), name="static")
@@ -192,53 +196,113 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
     @app.websocket("/ws/session/{session_id}")
     async def session(websocket: WebSocket, session_id: str) -> None:
+        async def send_event(
+            event_type: str,
+            payload: dict,
+            *,
+            requires_ack: bool = False,
+            correlation_id: str | None = None,
+        ):
+            envelope = make_server_envelope(
+                session_id=session_id,
+                event_type=event_type,
+                payload=payload,
+                requires_ack=requires_ack,
+                correlation_id=correlation_id,
+            )
+            data = envelope.model_dump(mode="json")
+            if requires_ack:
+                repository.record_outbound_envelope(data)
+            await websocket.send_json(data)
+            return envelope
+
         await websocket.accept()
-        await websocket.send_json(
-            {"type": "session.ready", "payload": service.snapshot().model_dump(mode="json")}
+        await send_event(
+            "session.ready", service.snapshot().model_dump(mode="json")
         )
+        for pending in repository.pending_outbound_envelopes(session_id):
+            await websocket.send_json(pending)
         try:
             while True:
                 raw_event = await websocket.receive_json()
                 try:
+                    correlation_id = None
+                    if "protocol_version" in raw_event:
+                        client_envelope = ClientEnvelope.model_validate(raw_event)
+                        if client_envelope.session_id != session_id:
+                            await send_event(
+                                "error",
+                                {"code": "session_mismatch", "detail": "Session ID mismatch"},
+                                correlation_id=client_envelope.event_id,
+                            )
+                            continue
+                        correlation_id = (
+                            client_envelope.correlation_id or client_envelope.event_id
+                        )
+                        if client_envelope.type == "client.ack":
+                            ack = ClientAck.model_validate(client_envelope.payload)
+                            recorded = repository.acknowledge_outbound_event(
+                                ack.event_id, session_id, ack.status
+                            )
+                            await send_event(
+                                "client.ack.recorded",
+                                {"event_id": ack.event_id, "recorded": recorded},
+                                correlation_id=correlation_id,
+                            )
+                            continue
+                        if not repository.claim_inbound_event(
+                            client_envelope.event_id, session_id
+                        ):
+                            await send_event(
+                                "client.duplicate",
+                                {"event_id": client_envelope.event_id, "ignored": True},
+                                correlation_id=correlation_id,
+                            )
+                            continue
+                        raw_event = {
+                            "type": client_envelope.type,
+                            **client_envelope.payload,
+                        }
                     event = event_adapter.validate_python(raw_event)
                     if isinstance(event, ProgressReported):
-                        await websocket.send_json(
-                            {
-                                "type": "mira.thinking",
-                                "payload": {"task_id": event.task_id},
-                            }
+                        await send_event(
+                            "mira.thinking",
+                            {"task_id": event.task_id},
+                            correlation_id=correlation_id,
                         )
                         response = await asyncio.to_thread(
                             service.report_progress, session_id, event
                         )
-                        await websocket.send_json(
-                            {
-                                "type": "mira.response",
-                                "payload": response.model_dump(mode="json"),
-                            }
+                        await send_event(
+                            "mira.response",
+                            response.model_dump(mode="json"),
+                            requires_ack=True,
+                            correlation_id=correlation_id,
                         )
                     elif isinstance(event, SnapshotRequested):
-                        await websocket.send_json(
-                            {
-                                "type": "session.snapshot",
-                                "payload": service.snapshot().model_dump(mode="json"),
-                            }
+                        await send_event(
+                            "session.snapshot",
+                            service.snapshot().model_dump(mode="json"),
+                            correlation_id=correlation_id,
                         )
                     elif isinstance(event, VoiceLifecycleEvent):
                         service.record_voice_event(session_id, event)
-                        await websocket.send_json(
-                            {
-                                "type": "voice.event.recorded",
-                                "payload": {"event_type": event.type},
-                            }
+                        await send_event(
+                            "voice.event.recorded",
+                            {"event_type": event.type},
+                            correlation_id=correlation_id,
                         )
                 except KeyError as error:
-                    await websocket.send_json(
-                        {"type": "error", "code": "task_not_found", "detail": error.args[0]}
+                    await send_event(
+                        "error",
+                        {"code": "task_not_found", "detail": error.args[0]},
+                        correlation_id=correlation_id,
                     )
                 except ValidationError as error:
-                    await websocket.send_json(
-                        {"type": "error", "code": "invalid_event", "detail": error.errors()}
+                    await send_event(
+                        "error",
+                        {"code": "invalid_event", "detail": error.errors()},
+                        correlation_id=correlation_id,
                     )
         except WebSocketDisconnect:
             return

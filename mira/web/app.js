@@ -151,15 +151,37 @@ function connect() {
   state.socket.onclose = () => { $("connection-label").textContent = "Reconnecting"; document.querySelector(".connection").classList.remove("online"); setTimeout(connect, 1500); };
   state.socket.onmessage = ({data}) => {
     const message = JSON.parse(data);
-    if (message.type === "session.ready" || message.type === "session.snapshot") applySnapshot(message.payload);
-    if (message.type === "mira.thinking") setThinking(true);
-    if (message.type === "mira.response") applyMira(message.payload);
-    if (message.type === "error") { setThinking(false); toast(message.detail || "Mira could not process that update."); }
+    let acknowledgementStatus = "applied";
+    try {
+      if (message.type === "session.ready" || message.type === "session.snapshot") applySnapshot(message.payload);
+      if (message.type === "mira.thinking") setThinking(true);
+      if (message.type === "mira.response") applyMira(message.payload);
+      if (message.type === "error") { setThinking(false); toast(message.payload?.detail || "Mira could not process that update."); }
+    } catch (error) {
+      acknowledgementStatus = "failed";
+      console.error("Could not apply Mira event", error);
+    } finally {
+      if (message.requires_ack) sendClientEvent("client.ack", {event_id:message.event_id, status:acknowledgementStatus}, message.event_id);
+    }
   };
 }
 
+function clientEventId() {
+  const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `client-${id}`;
+}
+
+function sendClientEvent(type, payload={}, correlationId=null) {
+  if (state.socket?.readyState !== WebSocket.OPEN) return false;
+  state.socket.send(JSON.stringify({
+    protocol_version:"0.1", event_id:clientEventId(), session_id:"dashboard",
+    type, timestamp:new Date().toISOString(), correlation_id:correlationId, payload
+  }));
+  return true;
+}
+
 function sendVoiceEvent(type, transcript=null) {
-  if (state.socket?.readyState === WebSocket.OPEN) state.socket.send(JSON.stringify({type, transcript}));
+  sendClientEvent(type, {transcript});
 }
 
 function interruptMira() {
@@ -271,12 +293,12 @@ $("report-form").addEventListener("submit", e => {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return toast("Mira is reconnecting. Try again in a moment.");
   setThinking(true);
   const startFocus = $("start-focus").checked;
-  state.socket.send(JSON.stringify({
-    type:"progress.reported", source:state.reportSource, task_id:$("report-task").value,
+  sendClientEvent("progress.reported", {
+    source:state.reportSource, task_id:$("report-task").value,
     transcript:$("report-text").value, progress:Number($("report-progress").value) / 100,
     start_focus:startFocus, focus_task_id:startFocus ? $("focus-task").value : null,
     focus_minutes:Number($("focus-minutes").value)
-  }));
+  });
   $("report-text").value = "";
   state.reportSource = "text";
 });

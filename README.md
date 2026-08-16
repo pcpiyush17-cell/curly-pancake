@@ -63,10 +63,12 @@ provider-backed adapters. Audio uploads are limited to 10 MB, used in memory for
 transcription, and are not persisted. Any provider failure falls back to the
 browser adapter; interruption cancels playback and the in-flight audio request.
 
-In a second terminal, run the mock end-to-end interaction:
+In a second terminal, run the simulated Unreal client. It deliberately drops
+its connection before acknowledging a response, reconnects, verifies the exact
+event is replayed, acknowledges it, and exercises voice interruption:
 
 ```powershell
-.venv\Scripts\python scripts/mock_vertical_slice.py
+.venv\Scripts\python scripts/simulated_unreal_client.py
 ```
 
 HTTP documentation is available at `http://127.0.0.1:8000/docs`. The live client endpoint is `ws://127.0.0.1:8000/ws/session/{session_id}`.
@@ -95,21 +97,33 @@ Core rules:
 - No romantic or dependency-forming behavior belongs in Mira's persona.
 - No multi-agent framework is used.
 
-## Current event contract
+## Versioned WebSocket contract
 
-Client progress event:
+Every client and server message uses protocol version `0.1` and a stable event
+ID. Domain fields live in `payload`, while correlation and delivery metadata
+stay in the envelope:
 
 ```json
 {
+  "protocol_version": "0.1",
+  "event_id": "unreal-550e8400e29b41d4a716446655440000",
+  "session_id": "unreal-sim",
   "type": "progress.reported",
-  "source": "voice",
-  "task_id": "task-ml",
-  "transcript": "I finished the ML assignment. Start focus mode for DSA.",
-  "progress": 1.0,
-  "start_focus": true,
-  "focus_task_id": "task-dsa",
-  "focus_minutes": 25
+  "timestamp": "2026-08-16T18:00:00Z",
+  "correlation_id": null,
+  "payload": {
+    "source": "voice",
+    "task_id": "task-ml",
+    "transcript": "I finished the ML assignment.",
+    "progress": 1.0
+  }
 }
 ```
 
-The server responds with `type: "mira.response"` and a structured `MiraResponse`. Send `type: "session.snapshot.requested"` to retrieve the persisted task and active Focus Mode state.
+`mira.response` messages set `requires_ack` to `true`. A client applies the
+response and sends `client.ack` with the server event ID and an `applied` or
+`failed` status. Unacknowledged responses are stored in SQLite and replayed
+with the same event ID when that session reconnects. Client event IDs are also
+stored, so retransmitted inputs are identified as duplicates instead of
+updating task state twice. Legacy unwrapped client messages remain accepted
+during the v0.1 transition.
