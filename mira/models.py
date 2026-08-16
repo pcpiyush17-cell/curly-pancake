@@ -235,8 +235,20 @@ class SnapshotRequested(BaseModel):
     type: Literal["session.snapshot.requested"] = "session.snapshot.requested"
 
 
+class VoiceLifecycleEvent(BaseModel):
+    type: Literal[
+        "user.speech.started",
+        "user.speech.completed",
+        "mira.speech.started",
+        "mira.speech.completed",
+        "mira.speech.interrupted",
+    ]
+    transcript: str | None = Field(default=None, max_length=2000)
+
+
 ClientEvent = Annotated[
-    ProgressReported | SnapshotRequested, Field(discriminator="type")
+    ProgressReported | SnapshotRequested | VoiceLifecycleEvent,
+    Field(discriminator="type"),
 ]
 
 

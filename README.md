@@ -50,6 +50,14 @@ Each record carries a source, confidence, and importance score. Mira receives at
 most five non-expired memories ranked by simple lexical relevance and importance;
 the system does not create hidden profiles or require vector storage.
 
+## Voice adapter
+
+The dashboard uses browser-native streaming speech recognition and speech
+synthesis for the first voice vertical slice. It emits provider-neutral voice
+lifecycle events over the existing WebSocket and cancels speech immediately
+when the microphone starts or the user presses Stop Mira. This adapter is a
+prototype boundary that Unreal and production speech providers can replace.
+
 In a second terminal, run the mock end-to-end interaction:
 
 ```powershell

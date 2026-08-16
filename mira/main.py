@@ -22,6 +22,7 @@ from mira.models import (
     SnapshotRequested,
     TaskCreate,
     TaskUpdate,
+    VoiceLifecycleEvent,
 )
 from mira.policy import DeterministicMiraPolicy
 from mira.service import MiraService
@@ -181,6 +182,14 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                             {
                                 "type": "session.snapshot",
                                 "payload": service.snapshot().model_dump(mode="json"),
+                            }
+                        )
+                    elif isinstance(event, VoiceLifecycleEvent):
+                        service.record_voice_event(session_id, event)
+                        await websocket.send_json(
+                            {
+                                "type": "voice.event.recorded",
+                                "payload": {"event_type": event.type},
                             }
                         )
                 except KeyError as error:
