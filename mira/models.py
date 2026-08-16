@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
@@ -35,6 +35,19 @@ class Task(BaseModel):
     due_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    priority: int = Field(default=3, ge=1, le=5)
+
+    @field_validator("title")
+    @classmethod
+    def title_is_not_blank(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("title must not be blank")
+        return title
 
 
 class Goal(BaseModel):
@@ -147,4 +160,3 @@ ClientEvent = Annotated[
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
     active_focus_session: FocusSession | None = None
-

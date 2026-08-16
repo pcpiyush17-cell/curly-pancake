@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mira — Execution Companion</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">MIRA / EXECUTION DESK</p>
+        <h1>Make the next move real.</h1>
+      </div>
+      <div class="connection"><span id="connection-dot"></span><span id="connection-label">Connecting</span></div>
+    </header>
+
+    <section class="grid">
+      <article class="panel mira-panel">
+        <div class="avatar" id="avatar" aria-label="Mira expression">
+          <div class="orb"></div>
+          <span id="mira-state">ATTENTIVE</span>
+        </div>
+        <div class="mira-copy">
+          <p class="eyebrow">MIRA SAYS</p>
+          <blockquote id="mira-speech">Tell me what moved. We’ll handle what didn’t.</blockquote>
+          <p id="mira-tone">calm · ready</p>
+        </div>
+      </article>
+
+      <article class="panel focus-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">FOCUS MODE</p><h2 id="focus-title">No session active</h2></div>
+          <span id="focus-status" class="pill">IDLE</span>
+        </div>
+        <div id="timer" class="timer">25:00</div>
+        <div class="progress-track"><div id="timer-progress"></div></div>
+        <p id="focus-detail" class="muted">Complete a task and ask Mira to start the next focus block.</p>
+      </article>
+
+      <article class="panel task-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">TODAY</p><h2>Execution queue</h2></div>
+          <span id="task-count" class="pill">0 TASKS</span>
+        </div>
+        <form id="task-form" class="task-form">
+          <input id="task-title" maxlength="160" placeholder="Add the next concrete task…" required>
+          <select id="task-priority" aria-label="Priority">
+            <option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option>
+            <option value="4">P4</option><option value="5">P5</option>
+          </select>
+          <button type="submit">Add task</button>
+        </form>
+        <div id="task-list" class="task-list"></div>
+      </article>
+
+      <article class="panel report-panel">
+        <p class="eyebrow">PROGRESS CHECK-IN</p>
+        <h2>What changed?</h2>
+        <form id="report-form">
+          <label>Task<select id="report-task" required></select></label>
+          <label>Your update<textarea id="report-text" rows="3" maxlength="2000" placeholder="I finished it, but the last section took longer than expected." required></textarea></label>
+          <label>Progress <strong id="progress-label">100%</strong><input id="report-progress" type="range" min="0" max="100" value="100"></label>
+          <div class="focus-choice">
+            <label class="check"><input id="start-focus" type="checkbox"> Start Focus Mode next</label>
+            <select id="focus-task" aria-label="Focus task"></select>
+            <select id="focus-minutes" aria-label="Focus duration"><option>15</option><option selected>25</option><option>45</option><option>60</option></select>
+          </div>
+          <button type="submit" class="primary">Report to Mira</button>
+        </form>
+      </article>
+    </section>
+  </main>
+  <div id="toast" role="status"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

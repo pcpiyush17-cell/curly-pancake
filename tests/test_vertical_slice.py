@@ -74,3 +74,25 @@ def test_unknown_task_returns_404(tmp_path):
         )
         assert response.status_code == 404
 
+
+def test_dashboard_and_task_creation(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        dashboard = client.get("/")
+        assert dashboard.status_code == 200
+        assert "Make the next move real" in dashboard.text
+        assert client.get("/static/app.js").status_code == 200
+
+        created = client.post(
+            "/api/tasks", json={"title": "Wire the Unreal client", "priority": 2}
+        )
+        assert created.status_code == 201
+        task = created.json()
+        assert task["title"] == "Wire the Unreal client"
+        assert task["status"] == "todo"
+
+        snapshot = client.get("/api/snapshot").json()
+        assert any(item["id"] == task["id"] for item in snapshot["tasks"])
+
+        blank = client.post("/api/tasks", json={"title": "   ", "priority": 3})
+        assert blank.status_code == 422
