@@ -43,6 +43,13 @@ environment, and set both `OPENAI_API_KEY` and `MIRA_OPENAI_MODEL`. The model
 receives task, goal, commitment, Focus, and progress context, but the backend
 keeps exclusive authority over UI and persistence actions.
 
+## Controlled memory
+
+Memories are local, visible, correctable, deletable, and optionally expiring.
+Each record carries a source, confidence, and importance score. Mira receives at
+most five non-expired memories ranked by simple lexical relevance and importance;
+the system does not create hidden profiles or require vector storage.
+
 In a second terminal, run the mock end-to-end interaction:
 
 ```powershell

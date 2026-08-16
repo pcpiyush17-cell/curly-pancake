@@ -13,6 +13,7 @@ from mira.models import (
     Goal,
     MiraResponse,
     MiraState,
+    Memory,
     ProgressReported,
     Task,
 )
@@ -39,6 +40,7 @@ class MiraContext(BaseModel):
     current_task: Task
     goals: list[Goal] = Field(default_factory=list)
     commitments: list[Commitment] = Field(default_factory=list)
+    relevant_memories: list[Memory] = Field(default_factory=list)
     active_focus_session: FocusSession | None = None
 
 
