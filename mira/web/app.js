@@ -1,4 +1,4 @@
-const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, listening: false, reportSource: "text", speaking: false };
+const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio: null, speechAbort: null };
 const $ = (id) => document.getElementById(id);
 
 function toast(message) {
@@ -163,12 +163,32 @@ function sendVoiceEvent(type, transcript=null) {
 }
 
 function interruptMira() {
-  if (!state.speaking && !speechSynthesis.speaking) return;
-  speechSynthesis.cancel(); state.speaking = false; $("stop-speaking").hidden = true;
+  const browserSpeaking = "speechSynthesis" in window && speechSynthesis.speaking;
+  if (!state.speaking && !browserSpeaking && !state.speechAbort) return;
+  state.speechAbort?.abort(); state.speechAbort = null;
+  if (state.speechAudio) { state.speechAudio.pause(); state.speechAudio.currentTime = 0; state.speechAudio = null; }
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  state.speaking = false; $("stop-speaking").hidden = true;
   sendVoiceEvent("mira.speech.interrupted"); $("mira-state").textContent = "INTERRUPTED";
 }
 
-function speakMira(response) {
+async function speakMira(response) {
+  if (state.voiceStatus.synthesis_enabled) {
+    const controller = new AbortController(); state.speechAbort = controller;
+    try {
+      const result = await fetch("/api/voice/speak", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:response.speech}),signal:controller.signal});
+      if (!result.ok) throw new Error("provider speech unavailable");
+      const url = URL.createObjectURL(await result.blob()); const audio = new Audio(url); state.speechAudio = audio; state.speechAbort = null;
+      audio.onplay = () => { state.speaking = true; $("stop-speaking").hidden = false; $("mira-state").textContent = "SPEAKING"; sendVoiceEvent("mira.speech.started"); };
+      audio.onended = () => { state.speaking = false; state.speechAudio = null; $("stop-speaking").hidden = true; $("mira-state").textContent = response.state; sendVoiceEvent("mira.speech.completed"); URL.revokeObjectURL(url); };
+      audio.onerror = () => { state.speaking = false; state.speechAudio = null; $("stop-speaking").hidden = true; URL.revokeObjectURL(url); speakWithBrowser(response); };
+      setTimeout(() => audio.play(), response.pause_before_ms || 0); return;
+    } catch (error) { state.speechAbort = null; if (error.name === "AbortError") return; }
+  }
+  speakWithBrowser(response);
+}
+
+function speakWithBrowser(response) {
   if (!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(response.speech);
@@ -181,15 +201,51 @@ function speakMira(response) {
   setTimeout(() => speechSynthesis.speak(utterance), response.pause_before_ms || 0);
 }
 
-function setupVoice() {
+function setupBrowserRecognition() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) { $("mic-button").disabled = true; $("mic-button").classList.add("unsupported"); $("voice-support").textContent = "Voice input is unavailable in this browser."; return; }
+  if (!Recognition) return false;
   const recognition = new Recognition(); state.recognition = recognition; recognition.continuous = false; recognition.interimResults = true; recognition.lang = "en-IN";
   let finalText = "";
   recognition.onstart = () => { interruptMira(); state.listening = true; finalText = ""; $("mic-button").classList.add("listening"); $("mic-label").textContent = "Listening… click to stop"; $("mira-state").textContent = "LISTENING"; sendVoiceEvent("user.speech.started"); };
   recognition.onresult = event => { let interim = ""; for (let i=event.resultIndex;i<event.results.length;i++) { const text=event.results[i][0].transcript; if (event.results[i].isFinal) finalText += text; else interim += text; } $("report-text").value = `${finalText}${interim}`.trim(); state.reportSource = "voice"; };
   recognition.onerror = event => { if (event.error !== "no-speech" && event.error !== "aborted") toast(`Voice input: ${event.error}`); };
   recognition.onend = () => { state.listening = false; $("mic-button").classList.remove("listening"); $("mic-label").textContent = "Start voice input"; if ($("report-text").value.trim()) sendVoiceEvent("user.speech.completed", $("report-text").value.trim()); };
+  return true;
+}
+
+function setListening(active, label="Listening… click to stop") {
+  state.listening = active; $("mic-button").classList.toggle("listening", active); $("mic-label").textContent = active ? label : "Start voice input";
+  if (active) { $("mira-state").textContent = "LISTENING"; sendVoiceEvent("user.speech.started"); }
+}
+
+async function startProviderRecording() {
+  interruptMira();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true}); state.mediaStream = stream;
+    const chunks = []; const recorder = new MediaRecorder(stream); state.recorder = recorder;
+    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    recorder.onstart = () => setListening(true);
+    recorder.onstop = async () => {
+      setListening(false, "Transcribing…"); $("mic-label").textContent = "Transcribing…"; stream.getTracks().forEach(track => track.stop()); state.mediaStream = null;
+      const blob = new Blob(chunks, {type:recorder.mimeType || "audio/webm"});
+      try { const result = await fetch("/api/voice/transcribe", {method:"POST",headers:{"Content-Type":blob.type},body:blob}); if (!result.ok) throw new Error("provider transcription unavailable"); const data = await result.json(); $("report-text").value = data.text; state.reportSource = "voice"; sendVoiceEvent("user.speech.completed", data.text); } catch { toast("Server transcription failed. Browser voice remains available."); }
+      $("mic-label").textContent = "Start voice input"; state.recorder = null;
+    };
+    recorder.start();
+  } catch { toast("Microphone permission is required for voice input."); setListening(false); }
+}
+
+function toggleVoiceInput() {
+  if (state.listening) { if (state.recorder?.state === "recording") state.recorder.stop(); else state.recognition?.stop(); return; }
+  if (state.voiceStatus.transcription_enabled && navigator.mediaDevices && "MediaRecorder" in window) startProviderRecording();
+  else if (state.recognition) state.recognition.start();
+}
+
+async function setupVoice() {
+  try { const response = await fetch("/api/voice/status"); if (response.ok) state.voiceStatus = await response.json(); } catch {}
+  const browserRecognition = setupBrowserRecognition();
+  if (!state.voiceStatus.transcription_enabled && !browserRecognition) { $("mic-button").disabled = true; $("mic-button").classList.add("unsupported"); $("voice-support").textContent = "Voice input is unavailable in this browser."; return; }
+  $("voice-support").textContent = state.voiceStatus.provider === "openai" ? "OpenAI speech · browser fallback" : "Browser voice";
 }
 
 async function loadReasoningStatus() {
@@ -227,7 +283,7 @@ $("report-form").addEventListener("submit", e => {
 $("focus-toggle").addEventListener("click", () => transitionFocus(state.focus?.status === "paused" ? "resume" : "pause"));
 $("focus-complete").addEventListener("click", () => transitionFocus("complete"));
 $("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
-$("mic-button").addEventListener("click", () => { if (!state.recognition) return; if (state.listening) state.recognition.stop(); else state.recognition.start(); });
+$("mic-button").addEventListener("click", toggleVoiceInput);
 $("stop-speaking").addEventListener("click", interruptMira);
 
 connect(); loadReasoningStatus(); setupVoice();

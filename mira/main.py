@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import TypeAdapter, ValidationError
 
@@ -20,12 +20,14 @@ from mira.models import (
     MemoryUpdate,
     ProgressReported,
     SnapshotRequested,
+    SpeechRequest,
     TaskCreate,
     TaskUpdate,
     VoiceLifecycleEvent,
 )
 from mira.policy import DeterministicMiraPolicy
 from mira.service import MiraService
+from mira.speech import build_speech_provider
 
 
 def create_app(database_path: str | Path | None = None) -> FastAPI:
@@ -42,6 +44,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
     app = FastAPI(title="Mira v0.1", version="0.1.0", lifespan=lifespan)
     app.state.service = service
+    app.state.speech = build_speech_provider()
     web_dir = Path(__file__).parent / "web"
     app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
@@ -60,6 +63,43 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             "last_provider": service.reasoning.last_provider,
             "last_error": service.reasoning.last_error,
         }
+
+    @app.get("/api/voice/status")
+    def voice_status():
+        provider = app.state.speech
+        return {
+            "provider": provider.name,
+            "transcription_enabled": provider.transcription_enabled,
+            "synthesis_enabled": provider.synthesis_enabled,
+        }
+
+    @app.post("/api/voice/transcribe")
+    async def transcribe_voice(request: Request):
+        provider = app.state.speech
+        if not provider.transcription_enabled:
+            raise HTTPException(status_code=503, detail="Server transcription unavailable")
+        audio = await request.body()
+        if not audio:
+            raise HTTPException(status_code=422, detail="Audio is required")
+        if len(audio) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Audio exceeds 10 MB")
+        content_type = request.headers.get("content-type", "audio/webm")
+        try:
+            text = await asyncio.to_thread(provider.transcribe, audio, content_type)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Transcription provider failed")
+        return {"text": text}
+
+    @app.post("/api/voice/speak")
+    async def synthesize_voice(speech: SpeechRequest):
+        provider = app.state.speech
+        if not provider.synthesis_enabled:
+            raise HTTPException(status_code=503, detail="Server speech unavailable")
+        try:
+            audio = await asyncio.to_thread(provider.synthesize, speech.text)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Speech provider failed")
+        return Response(content=audio, media_type="audio/mpeg")
 
     @app.get("/api/snapshot")
     def snapshot():

@@ -58,6 +58,11 @@ lifecycle events over the existing WebSocket and cancels speech immediately
 when the microphone starts or the user presses Stop Mira. This adapter is a
 prototype boundary that Unreal and production speech providers can replace.
 
+Set `MIRA_OPENAI_STT_MODEL` and/or `MIRA_OPENAI_TTS_MODEL` to enable the
+provider-backed adapters. Audio uploads are limited to 10 MB, used in memory for
+transcription, and are not persisted. Any provider failure falls back to the
+browser adapter; interruption cancels playback and the in-flight audio request.
+
 In a second terminal, run the mock end-to-end interaction:
 
 ```powershell

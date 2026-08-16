@@ -349,3 +349,52 @@ def test_voice_lifecycle_events_are_accepted(tmp_path):
             socket.send_json({"type": "mira.speech.interrupted"})
             interrupted = socket.receive_json()
             assert interrupted["payload"]["event_type"] == "mira.speech.interrupted"
+
+
+class StubSpeechProvider:
+    name = "stub-speech"
+    transcription_enabled = True
+    synthesis_enabled = True
+
+    def transcribe(self, audio, content_type):
+        assert audio == b"voice-bytes"
+        assert content_type == "audio/webm"
+        return "halfway through the task"
+
+    def synthesize(self, text):
+        assert text == "Keep going."
+        return b"mp3-bytes"
+
+
+def test_provider_backed_speech_endpoints(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    app.state.speech = StubSpeechProvider()
+    with TestClient(app) as client:
+        status = client.get("/api/voice/status").json()
+        assert status == {
+            "provider": "stub-speech",
+            "transcription_enabled": True,
+            "synthesis_enabled": True,
+        }
+
+        transcript = client.post(
+            "/api/voice/transcribe",
+            content=b"voice-bytes",
+            headers={"content-type": "audio/webm"},
+        )
+        assert transcript.status_code == 200
+        assert transcript.json()["text"] == "halfway through the task"
+
+        speech = client.post("/api/voice/speak", json={"text": "Keep going."})
+        assert speech.status_code == 200
+        assert speech.headers["content-type"] == "audio/mpeg"
+        assert speech.content == b"mp3-bytes"
+
+
+def test_speech_endpoints_fall_back_when_not_configured(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        status = client.get("/api/voice/status").json()
+        assert status["provider"] == "browser"
+        assert client.post("/api/voice/transcribe", content=b"audio").status_code == 503
+        assert client.post("/api/voice/speak", json={"text": "Hello"}).status_code == 503
