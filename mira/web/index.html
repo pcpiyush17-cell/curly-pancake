@@ -15,6 +15,7 @@
       <a href="#review"><span>▥</span>Review</a>
       <a href="#direction"><span>⌁</span>Roadmap</a>
       <a href="#memory"><span>◇</span>Workspace</a>
+      <a href="#settings"><span>⚙</span>Settings</a>
     </nav>
     <p class="sidebar-quote">“Discipline is choosing between what you want now and what you want most.”</p>
     <a class="talk-link" href="#conversation"><span>▥</span>Talk to Mira</a>
@@ -152,9 +153,18 @@
         </form>
         <div id="memory-list" class="memory-list"></div>
       </article>
+
+      <article class="panel settings-panel" id="settings">
+        <div class="section-heading"><div><p class="eyebrow">DESKTOP</p><h2>Companion settings</h2></div><span id="tray-status" class="pill">CHECKING</span></div>
+        <p class="muted">Keep Mira available from the system tray and receive Focus completion and commitment reminders.</p>
+        <div class="desktop-setting-row">
+          <label class="check"><input id="launch-startup" type="checkbox"> Launch Mira when I sign in to Windows</label>
+          <button id="save-desktop-settings" type="button" class="primary">Save desktop settings</button>
+        </div>
+      </article>
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=visual-2"></script>
+  <script src="/static/app.js?v=desktop-1"></script>
 </body>
 </html>

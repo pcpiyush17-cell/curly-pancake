@@ -80,6 +80,30 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             "last_error": app.state.last_voice_error,
         }
 
+    @app.get("/api/desktop/status")
+    def desktop_status():
+        import importlib.util
+
+        from mira.desktop import is_startup_enabled
+
+        return {
+            "windows": os.name == "nt",
+            "tray_available": bool(
+                importlib.util.find_spec("pystray")
+                and importlib.util.find_spec("PIL")
+            ),
+            "startup_enabled": is_startup_enabled(),
+        }
+
+    @app.post("/api/desktop/startup/{enabled}")
+    def update_desktop_startup(enabled: bool):
+        from mira.desktop import set_startup_enabled
+
+        try:
+            return {"startup_enabled": set_startup_enabled(enabled)}
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+
     @app.post("/api/voice/transcribe")
     async def transcribe_voice(request: Request):
         provider = app.state.speech

@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime, timedelta
 
 from mira import desktop
 
@@ -42,3 +43,45 @@ def test_local_env_loads_values_without_overwriting_existing(tmp_path, monkeypat
 
     assert os.environ["MIRA_TEST_NEW"] == "new value"
     assert os.environ["MIRA_TEST_KEPT"] == "already-set"
+
+
+class FakeTrayIcon:
+    def __init__(self):
+        self.notifications = []
+
+    def notify(self, message, title):
+        self.notifications.append((title, message))
+
+
+def test_tray_notifies_once_for_focus_and_due_commitment():
+    tray = desktop.DesktopTray.__new__(desktop.DesktopTray)
+    tray.icon = FakeTrayIcon()
+    tray.notified_focus = set()
+    tray.notified_commitments = set()
+    now = datetime.now(UTC)
+    snapshot = {
+        "tasks": [{"id": "task-1", "title": "Practice DSA"}],
+        "active_focus_session": {
+            "id": "focus-1", "task_id": "task-1", "status": "active",
+            "planned_minutes": 25,
+            "started_at": (now - timedelta(minutes=26)).isoformat(),
+        },
+        "commitments": [{
+            "id": "commitment-1", "statement": "Finish the review",
+            "due_at": (now - timedelta(minutes=1)).isoformat(), "kept": None,
+        }],
+    }
+
+    tray.notify_due_items(snapshot, now)
+    tray.notify_due_items(snapshot, now)
+
+    assert tray.icon.notifications == [
+        ("Focus complete", "Your focus block for Practice DSA is complete."),
+        ("Commitment due", "Finish the review"),
+    ]
+
+
+def test_startup_command_uses_background_python():
+    command = desktop.startup_command()
+    assert "pythonw.exe" in command
+    assert command.endswith("-m mira.desktop")

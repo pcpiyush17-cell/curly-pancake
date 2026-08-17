@@ -19,6 +19,8 @@ ai = [
 ]
 desktop = [
   "pywebview>=5.4,<7",
+  "pystray>=0.19,<1",
+  "pillow>=10,<13",
 ]
 [project.scripts]
 mira-desktop = "mira.desktop:main"
