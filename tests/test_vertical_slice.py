@@ -103,6 +103,7 @@ def test_dashboard_and_task_creation(tmp_path):
         assert dashboard.status_code == 200
         assert "Make the next move real" in dashboard.text
         assert client.get("/static/app.js").status_code == 200
+        assert client.get("/static/assets/avatar/mira-neutral.png").status_code == 200
 
         created = client.post(
             "/api/tasks", json={"title": "Wire the Unreal client", "priority": 2}

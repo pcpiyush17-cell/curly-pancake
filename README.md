@@ -30,6 +30,9 @@ Start the API:
 Open `http://127.0.0.1:8000` for the local execution dashboard. It supports
 task creation, progress check-ins, live structured Mira responses, persisted
 task state, and a visible Focus Mode timer.
+The v0.1 living portrait maps Mira's structured expression cues to six
+consistent character states—neutral, listening, focused, skeptical, warm smile,
+and quietly pleased—without requiring Unreal Engine at runtime.
 The second dashboard slice adds task editing and archival, Focus pause/resume/
 complete/cancel controls, and recent Focus-session history.
 The third slice introduces goals, goal-linked tasks, explicit commitments with
