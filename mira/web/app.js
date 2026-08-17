@@ -389,6 +389,18 @@ async function loadReasoningStatus() {
   $("reasoning-mode").textContent = `· ${status.configured_provider}`;
 }
 
+async function loadDesktopStatus() {
+  try {
+    const response = await fetch("/api/desktop/status");
+    if (!response.ok) return;
+    const status = await response.json();
+    $("launch-startup").checked = status.startup_enabled;
+    $("launch-startup").disabled = !status.windows;
+    $("save-desktop-settings").disabled = !status.windows;
+    $("tray-status").textContent = status.tray_available ? "TRAY READY" : "TRAY SETUP NEEDED";
+  } catch {}
+}
+
 function updateClock() {
   const now = new Date();
   const hour = now.getHours();
@@ -438,5 +450,13 @@ $("focus-complete").addEventListener("click", () => transitionFocus("complete"))
 $("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
 $("mic-button").addEventListener("click", toggleVoiceInput);
 $("stop-speaking").addEventListener("click", interruptMira);
+$("save-desktop-settings").addEventListener("click", async () => {
+  const enabled = $("launch-startup").checked;
+  const response = await fetch(`/api/desktop/startup/${enabled}`, {method:"POST"});
+  if (!response.ok) return toast("Desktop settings could not be saved.");
+  const status = await response.json();
+  $("launch-startup").checked = status.startup_enabled;
+  toast(status.startup_enabled ? "Mira will launch when you sign in." : "Windows startup disabled.");
+});
 
-preloadPortraits(); updateClock(); setInterval(updateClock, 30000); connect(); loadReasoningStatus(); setupVoice();
+preloadPortraits(); updateClock(); setInterval(updateClock, 30000); connect(); loadReasoningStatus(); loadDesktopStatus(); setupVoice();

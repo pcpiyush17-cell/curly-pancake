@@ -44,7 +44,7 @@ Unreal Engine is not required for Mira v0.1. Install the lightweight Windows
 window once (it uses the Edge WebView already included with Windows):
 
 ```powershell
-.venv\Scripts\python -m pip install "pywebview>=5.4,<7"
+.venv\Scripts\python -m pip install "pywebview>=5.4,<7" "pystray>=0.19,<1" "pillow>=10,<13"
 ```
 
 Then double-click `Start-Mira.cmd`. The PowerShell launcher remains available,
@@ -61,6 +61,11 @@ without normal browser controls. Closing
 the window also stops the service started by that window. If a healthy Mira
 service is already running on port 8000, the desktop shell reuses it and leaves
 it running when the window closes. Set `MIRA_DESKTOP_PORT` to use another port.
+With the tray dependencies installed, closing the window hides Mira to the
+Windows notification area instead of stopping it. The tray menu can reopen or
+quit Mira. While running, Mira notifies once when an active Focus block finishes
+and when an unresolved commitment reaches its due time. Windows startup remains
+off until the user enables it under Companion settings.
 
 ## Reasoning providers
 
