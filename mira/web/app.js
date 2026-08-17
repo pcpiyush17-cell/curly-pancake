@@ -1,4 +1,4 @@
-const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio: null, speechAbort: null, portraitCue:"neutral", portraitRequest:0 };
+const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
 const $ = (id) => document.getElementById(id);
 const portraitAssets = {
   neutral: "/static/assets/avatar/mira-neutral.png",
@@ -104,6 +104,7 @@ function renderHistory() {
 }
 
 function applyMira(response) {
+  state.lastMiraResponse = response;
   $("mira-speech").textContent = response.speech;
   $("mira-state").textContent = response.state;
   $("mira-tone").textContent = `${response.tone} · intensity ${Math.round(response.tone_intensity * 100)}% · ${response.expression.primary.replaceAll("_", " ")}`;
@@ -222,28 +223,60 @@ function sendVoiceEvent(type, transcript=null) {
   sendClientEvent(type, {transcript});
 }
 
+function clearSpeechTimer() {
+  if (state.speechTimer) clearTimeout(state.speechTimer);
+  state.speechTimer = null;
+}
+
+function restoreMiraPresentation(response=state.lastMiraResponse) {
+  $("avatar").classList.remove("speaking", "voice-pending");
+  if (!response) return;
+  $("mira-state").textContent = response.state;
+  setPortrait(portraitCueFor(response), response.state);
+}
+
+function beginSpeaking() {
+  state.speaking = true;
+  $("avatar").classList.remove("voice-pending");
+  $("avatar").classList.add("speaking");
+  $("stop-speaking").hidden = false;
+  $("mira-state").textContent = "SPEAKING";
+  sendVoiceEvent("mira.speech.started");
+}
+
+function finishSpeaking(response, completed=true) {
+  state.speaking = false; state.speechAudio = null; state.speechUtterance = null; state.speechAbort = null;
+  clearSpeechTimer(); $("stop-speaking").hidden = true;
+  restoreMiraPresentation(response);
+  if (completed) sendVoiceEvent("mira.speech.completed");
+}
+
 function interruptMira() {
   const browserSpeaking = "speechSynthesis" in window && speechSynthesis.speaking;
-  if (!state.speaking && !browserSpeaking && !state.speechAbort) return;
+  if (!state.speaking && !browserSpeaking && !state.speechAbort && !state.speechTimer) return;
+  clearSpeechTimer();
   state.speechAbort?.abort(); state.speechAbort = null;
-  if (state.speechAudio) { state.speechAudio.pause(); state.speechAudio.currentTime = 0; state.speechAudio = null; }
+  if (state.speechAudio) { const source = state.speechAudio.src; state.speechAudio.onplay = null; state.speechAudio.onended = null; state.speechAudio.onerror = null; state.speechAudio.pause(); state.speechAudio.currentTime = 0; state.speechAudio = null; if (source.startsWith("blob:")) URL.revokeObjectURL(source); }
+  if (state.speechUtterance) { state.speechUtterance.onstart = null; state.speechUtterance.onend = null; state.speechUtterance.onerror = null; state.speechUtterance = null; }
   if ("speechSynthesis" in window) speechSynthesis.cancel();
-  state.speaking = false; $("stop-speaking").hidden = true;
+  state.speaking = false; $("stop-speaking").hidden = true; $("avatar").classList.remove("speaking", "voice-pending");
   sendVoiceEvent("mira.speech.interrupted"); $("mira-state").textContent = "INTERRUPTED"; setPortrait("attentive", "INTERRUPTED");
 }
 
 async function speakMira(response) {
+  interruptMira();
   if (state.voiceStatus.synthesis_enabled) {
     const controller = new AbortController(); state.speechAbort = controller;
+    $("avatar").classList.add("voice-pending"); $("stop-speaking").hidden = false; $("mira-state").textContent = "PREPARING VOICE";
     try {
       const result = await fetch("/api/voice/speak", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:response.speech}),signal:controller.signal});
       if (!result.ok) throw new Error("provider speech unavailable");
       const url = URL.createObjectURL(await result.blob()); const audio = new Audio(url); state.speechAudio = audio; state.speechAbort = null;
-      audio.onplay = () => { state.speaking = true; $("stop-speaking").hidden = false; $("mira-state").textContent = "SPEAKING"; sendVoiceEvent("mira.speech.started"); };
-      audio.onended = () => { state.speaking = false; state.speechAudio = null; $("stop-speaking").hidden = true; $("mira-state").textContent = response.state; sendVoiceEvent("mira.speech.completed"); URL.revokeObjectURL(url); };
-      audio.onerror = () => { state.speaking = false; state.speechAudio = null; $("stop-speaking").hidden = true; URL.revokeObjectURL(url); speakWithBrowser(response); };
-      setTimeout(() => audio.play(), response.pause_before_ms || 0); return;
-    } catch (error) { state.speechAbort = null; if (error.name === "AbortError") return; }
+      audio.onplay = beginSpeaking;
+      audio.onended = () => { finishSpeaking(response); URL.revokeObjectURL(url); };
+      audio.onerror = () => { finishSpeaking(response, false); URL.revokeObjectURL(url); speakWithBrowser(response); };
+      state.speechTimer = setTimeout(() => { state.speechTimer = null; audio.play().catch(() => audio.onerror()); }, response.pause_before_ms || 0); return;
+    } catch (error) { state.speechAbort = null; $("avatar").classList.remove("voice-pending"); $("stop-speaking").hidden = true; if (error.name === "AbortError") return; }
   }
   speakWithBrowser(response);
 }
@@ -252,13 +285,15 @@ function speakWithBrowser(response) {
   if (!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(response.speech);
+  state.speechUtterance = utterance;
   const voices = speechSynthesis.getVoices();
   utterance.voice = voices.find(voice => voice.lang === "en-IN") || voices.find(voice => voice.lang.startsWith("en-GB")) || voices.find(voice => voice.lang.startsWith("en")) || null;
   utterance.rate = response.tone === "direct" ? .92 : .98; utterance.pitch = .96;
-  utterance.onstart = () => { state.speaking = true; $("stop-speaking").hidden = false; $("mira-state").textContent = "SPEAKING"; sendVoiceEvent("mira.speech.started"); };
-  utterance.onend = () => { state.speaking = false; $("stop-speaking").hidden = true; $("mira-state").textContent = response.state; sendVoiceEvent("mira.speech.completed"); };
-  utterance.onerror = () => { state.speaking = false; $("stop-speaking").hidden = true; };
-  setTimeout(() => speechSynthesis.speak(utterance), response.pause_before_ms || 0);
+  utterance.onstart = beginSpeaking;
+  utterance.onend = () => finishSpeaking(response);
+  utterance.onerror = () => finishSpeaking(response, false);
+  $("avatar").classList.add("voice-pending"); $("stop-speaking").hidden = false; $("mira-state").textContent = "PAUSING";
+  state.speechTimer = setTimeout(() => { state.speechTimer = null; speechSynthesis.speak(utterance); }, response.pause_before_ms || 0);
 }
 
 function setupBrowserRecognition() {
