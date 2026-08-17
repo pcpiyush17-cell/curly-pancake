@@ -43,6 +43,10 @@ function toast(message) {
 
 function renderTasks() {
   const sorted = [...state.tasks].sort((a,b) => a.priority - b.priority);
+  const completed = sorted.filter(task => task.status === "completed").length;
+  $("today-completed").textContent = completed;
+  $("today-total").textContent = sorted.length;
+  $("today-progress").style.width = `${sorted.length ? completed / sorted.length * 100 : 0}%`;
   $("task-count").textContent = `${sorted.length} TASK${sorted.length === 1 ? "" : "S"}`;
   $("task-list").innerHTML = sorted.map(task => `
     <div class="task ${task.status === "completed" ? "completed" : ""}">
@@ -156,7 +160,7 @@ function setThinking(thinking) {
 
 function startTimer(focus) {
   state.focus = focus; clearInterval(state.timerHandle);
-  document.body.classList.toggle("focus-active", ["active","paused"].includes(focus.status));
+  document.body.classList.toggle("focus-active", focus.status === "active");
   const task = state.tasks.find(t => t.id === focus.task_id);
   $("focus-title").textContent = task?.title || "Focused session"; $("focus-status").textContent = focus.status.toUpperCase();
   $("focus-controls").hidden = false; $("focus-toggle").textContent = focus.status === "paused" ? "Resume" : "Pause";
@@ -342,16 +346,26 @@ async function startProviderRecording() {
   interruptMira();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({audio:true}); state.mediaStream = stream;
-    const chunks = []; const recorder = new MediaRecorder(stream); state.recorder = recorder;
+    const chunks = [];
+    const preferredType = MediaRecorder.isTypeSupported?.("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+    const recorder = preferredType ? new MediaRecorder(stream, {mimeType:preferredType}) : new MediaRecorder(stream); state.recorder = recorder;
     recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
     recorder.onstart = () => setListening(true);
     recorder.onstop = async () => {
       setListening(false, "Transcribing…"); $("mic-label").textContent = "Transcribing…"; stream.getTracks().forEach(track => track.stop()); state.mediaStream = null;
       const blob = new Blob(chunks, {type:recorder.mimeType || "audio/webm"});
-      try { const result = await fetch("/api/voice/transcribe", {method:"POST",headers:{"Content-Type":blob.type},body:blob}); if (!result.ok) throw new Error("provider transcription unavailable"); const data = await result.json(); $("report-text").value = data.text; state.reportSource = "voice"; sendVoiceEvent("user.speech.completed", data.text); } catch { toast("Server transcription failed. Browser voice remains available."); }
+      try {
+        const result = await fetch("/api/voice/transcribe", {method:"POST",headers:{"Content-Type":blob.type},body:blob});
+        if (!result.ok) { const failure = await result.json().catch(() => ({})); throw new Error(failure.detail?.message || failure.detail || "Server transcription failed"); }
+        const data = await result.json(); $("report-text").value = data.text; state.reportSource = "voice"; sendVoiceEvent("user.speech.completed", data.text);
+      } catch (error) {
+        state.voiceStatus.transcription_enabled = false;
+        $("voice-support").textContent = "Browser voice · OpenAI transcription unavailable";
+        toast(`${error.message}. Click again to use browser voice.`);
+      }
       $("mic-label").textContent = "Start voice input"; state.recorder = null;
     };
-    recorder.start();
+    recorder.start(250);
   } catch { toast("Microphone permission is required for voice input."); setListening(false); }
 }
 
@@ -373,6 +387,15 @@ async function loadReasoningStatus() {
   if (!response.ok) return;
   const status = await response.json();
   $("reasoning-mode").textContent = `· ${status.configured_provider}`;
+}
+
+function updateClock() {
+  const now = new Date();
+  const hour = now.getHours();
+  const salutation = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  $("greeting").textContent = `${salutation}, Piyush.`;
+  $("today-date").textContent = now.toLocaleDateString(undefined, {weekday:"long", day:"numeric", month:"short"});
+  $("today-time").textContent = now.toLocaleTimeString(undefined, {hour:"numeric", minute:"2-digit"});
 }
 
 $("progress-label").textContent = `${$("report-progress").value}%`;
@@ -416,4 +439,4 @@ $("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
 $("mic-button").addEventListener("click", toggleVoiceInput);
 $("stop-speaking").addEventListener("click", interruptMira);
 
-preloadPortraits(); connect(); loadReasoningStatus(); setupVoice();
+preloadPortraits(); updateClock(); setInterval(updateClock, 30000); connect(); loadReasoningStatus(); setupVoice();

@@ -38,6 +38,30 @@ complete/cancel controls, and recent Focus-session history.
 The third slice introduces goals, goal-linked tasks, explicit commitments with
 due times, and kept/missed outcomes for future evidence-based coaching.
 
+## Lightweight Windows desktop app
+
+Unreal Engine is not required for Mira v0.1. Install the lightweight Windows
+window once (it uses the Edge WebView already included with Windows):
+
+```powershell
+.venv\Scripts\python -m pip install "pywebview>=5.4,<7"
+```
+
+Then double-click `Start-Mira.cmd`. The PowerShell launcher remains available,
+but the CMD launcher avoids Windows PowerShell execution-policy and file-
+association differences. While developing, you can also run:
+
+```powershell
+.venv\Scripts\python -m mira.desktop
+```
+
+The launcher loads `.env`, starts the FastAPI service when needed, waits for it
+to become healthy, and opens the dashboard in a dedicated native window
+without normal browser controls. Closing
+the window also stops the service started by that window. If a healthy Mira
+service is already running on port 8000, the desktop shell reuses it and leaves
+it running when the window closes. Set `MIRA_DESKTOP_PORT` to use another port.
+
 ## Reasoning providers
 
 Mira always has a deterministic local fallback. To enable the optional OpenAI

@@ -7,3 +7,5 @@ __pycache__/
 *.db
 *.db-shm
 *.db-wal
+.desktop-profile/
+.mira-launch*.log

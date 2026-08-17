@@ -49,9 +49,18 @@ class OpenAISpeechProvider:
     def transcribe(self, audio: bytes, content_type: str) -> str:
         if not self.transcription_model:
             raise RuntimeError("Server transcription is not configured")
+        media_type = content_type.split(";", 1)[0].strip().lower()
+        extension = {
+            "audio/mp4": "m4a",
+            "audio/mpeg": "mp3",
+            "audio/ogg": "ogg",
+            "audio/wav": "wav",
+            "audio/x-wav": "wav",
+            "audio/webm": "webm",
+        }.get(media_type, "webm")
         result = self.client.audio.transcriptions.create(
             model=self.transcription_model,
-            file=("voice-input.webm", audio, content_type),
+            file=(f"voice-input.{extension}", audio, media_type),
             language="en",
         )
         return result.text.strip()
@@ -83,4 +92,3 @@ def build_speech_provider() -> SpeechProvider:
         )
     except ImportError:
         return BrowserSpeechFallback()
-

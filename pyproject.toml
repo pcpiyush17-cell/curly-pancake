@@ -17,6 +17,11 @@ dev = [
 ai = [
   "openai>=1.68,<3",
 ]
+desktop = [
+  "pywebview>=5.4,<7",
+]
+[project.scripts]
+mira-desktop = "mira.desktop:main"
 
 [tool.setuptools]
 packages = ["mira"]

@@ -4,20 +4,35 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mira — Execution Companion</title>
-  <link rel="stylesheet" href="/static/styles.css?v=conversation-1">
+  <link rel="stylesheet" href="/static/styles.css?v=visual-2">
 </head>
 <body>
+  <aside class="sidebar" aria-label="Primary navigation">
+    <div class="brand">Mira<span></span></div>
+    <nav>
+      <a class="active" href="#home"><span>⌂</span>Home</a>
+      <a href="#focus"><span>◎</span>Focus</a>
+      <a href="#review"><span>▥</span>Review</a>
+      <a href="#direction"><span>⌁</span>Roadmap</a>
+      <a href="#memory"><span>◇</span>Workspace</a>
+    </nav>
+    <p class="sidebar-quote">“Discipline is choosing between what you want now and what you want most.”</p>
+    <a class="talk-link" href="#conversation"><span>▥</span>Talk to Mira</a>
+  </aside>
   <main class="shell">
-    <header class="topbar">
+    <header class="topbar" id="home">
       <div>
-        <p class="eyebrow">MIRA / EXECUTION DESK</p>
-        <h1>Make the next move real.</h1>
+        <h1 id="greeting">Good evening, Piyush.</h1>
+        <p class="header-subtitle">How did your day go?</p>
       </div>
-      <div class="connection"><span id="connection-dot"></span><span id="connection-label">Connecting</span><span id="reasoning-mode"></span></div>
+      <div class="topbar-meta">
+        <div class="clock"><span id="today-date"></span><strong id="today-time"></strong></div>
+        <div class="connection"><span id="connection-dot"></span><span id="connection-label">Connecting</span><span id="reasoning-mode"></span></div>
+      </div>
     </header>
 
     <section class="grid">
-      <article class="panel mira-panel">
+      <article class="panel mira-panel" id="review">
         <div class="avatar" id="avatar" aria-label="Mira expression">
           <img class="portrait-layer active" src="/static/assets/avatar/mira-neutral.png" alt="Mira, attentive and ready">
           <img class="portrait-layer" src="/static/assets/avatar/mira-neutral.png" alt="" aria-hidden="true">
@@ -30,7 +45,7 @@
         </div>
       </article>
 
-      <article class="panel focus-panel">
+      <article class="panel focus-panel" id="focus">
         <div class="section-heading">
           <div><p class="eyebrow">FOCUS MODE</p><h2 id="focus-title">No session active</h2></div>
           <span id="focus-status" class="pill">IDLE</span>
@@ -53,6 +68,11 @@
         <div class="section-heading">
           <div><p class="eyebrow">TODAY</p><h2>Execution queue</h2></div>
           <span id="task-count" class="pill">0 TASKS</span>
+        </div>
+        <div class="today-overview">
+          <strong><span id="today-completed">0</span> / <span id="today-total">0</span></strong>
+          <span>Done</span>
+          <div><i id="today-progress"></i></div>
         </div>
         <form id="task-form" class="task-form">
           <input id="task-title" maxlength="160" placeholder="Add the next concrete task…" required>
@@ -87,7 +107,7 @@
         </form>
       </article>
 
-      <article class="panel conversation-panel">
+      <article class="panel conversation-panel" id="conversation">
         <div class="section-heading">
           <div><p class="eyebrow">FOLLOW-UP</p><h2>Continue the conversation</h2></div>
           <span class="pill">CONTEXTUAL</span>
@@ -103,7 +123,7 @@
         </form>
       </article>
 
-      <article class="panel direction-panel">
+      <article class="panel direction-panel" id="direction">
         <div class="section-heading"><div><p class="eyebrow">DIRECTION</p><h2>Goals</h2></div><span id="goal-count" class="pill">0 ACTIVE</span></div>
         <form id="goal-form" class="inline-form"><input id="goal-title" maxlength="180" placeholder="Define an outcome…" required><button>Add goal</button></form>
         <div id="goal-list" class="goal-list"></div>
@@ -120,7 +140,7 @@
         <div id="commitment-list" class="commitment-list"></div>
       </article>
 
-      <article class="panel memory-panel">
+      <article class="panel memory-panel" id="memory">
         <div class="section-heading"><div><p class="eyebrow">USER-CONTROLLED</p><h2>Mira’s memory</h2></div><span id="memory-count" class="pill">0 MEMORIES</span></div>
         <p class="muted">Only memories shown here can enter Mira’s reasoning context. You can correct or delete any of them.</p>
         <form id="memory-form">
@@ -135,6 +155,6 @@
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=conversation-1"></script>
+  <script src="/static/app.js?v=visual-2"></script>
 </body>
 </html>
