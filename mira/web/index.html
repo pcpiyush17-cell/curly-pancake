@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mira — Execution Companion</title>
+  <link rel="stylesheet" href="/static/styles.css?v=visual-2">
+</head>
+<body>
+  <aside class="sidebar" aria-label="Primary navigation">
+    <div class="brand">Mira<span></span></div>
+    <nav>
+      <a class="active" href="#home"><span>⌂</span>Home</a>
+      <a href="#focus"><span>◎</span>Focus</a>
+      <a href="#review"><span>▥</span>Review</a>
+      <a href="#direction"><span>⌁</span>Roadmap</a>
+      <a href="#memory"><span>◇</span>Workspace</a>
+    </nav>
+    <p class="sidebar-quote">“Discipline is choosing between what you want now and what you want most.”</p>
+    <a class="talk-link" href="#conversation"><span>▥</span>Talk to Mira</a>
+  </aside>
+  <main class="shell">
+    <header class="topbar" id="home">
+      <div>
+        <h1 id="greeting">Good evening, Piyush.</h1>
+        <p class="header-subtitle">How did your day go?</p>
+      </div>
+      <div class="topbar-meta">
+        <div class="clock"><span id="today-date"></span><strong id="today-time"></strong></div>
+        <div class="connection"><span id="connection-dot"></span><span id="connection-label">Connecting</span><span id="reasoning-mode"></span></div>
+      </div>
+    </header>
+
+    <section class="grid">
+      <article class="panel mira-panel" id="review">
+        <div class="avatar" id="avatar" aria-label="Mira expression">
+          <img class="portrait-layer active" src="/static/assets/avatar/mira-neutral.png" alt="Mira, attentive and ready">
+          <img class="portrait-layer" src="/static/assets/avatar/mira-neutral.png" alt="" aria-hidden="true">
+          <span class="avatar-state" id="mira-state">ATTENTIVE</span>
+        </div>
+        <div class="mira-copy">
+          <p class="eyebrow">MIRA SAYS</p>
+          <blockquote id="mira-speech">Tell me what moved. We’ll handle what didn’t.</blockquote>
+          <p id="mira-tone">calm · ready</p>
+        </div>
+      </article>
+
+      <article class="panel focus-panel" id="focus">
+        <div class="section-heading">
+          <div><p class="eyebrow">FOCUS MODE</p><h2 id="focus-title">No session active</h2></div>
+          <span id="focus-status" class="pill">IDLE</span>
+        </div>
+        <div id="timer" class="timer">25:00</div>
+        <div class="progress-track"><div id="timer-progress"></div></div>
+        <p id="focus-detail" class="muted">Complete a task and ask Mira to start the next focus block.</p>
+        <div id="focus-controls" class="focus-controls" hidden>
+          <button id="focus-toggle" type="button">Pause</button>
+          <button id="focus-complete" type="button" class="quiet">Complete</button>
+          <button id="focus-cancel" type="button" class="danger">Cancel</button>
+        </div>
+        <div class="history-block">
+          <p class="eyebrow">RECENT SESSIONS</p>
+          <div id="focus-history" class="history-list"><p class="muted">No sessions yet.</p></div>
+        </div>
+      </article>
+
+      <article class="panel task-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">TODAY</p><h2>Execution queue</h2></div>
+          <span id="task-count" class="pill">0 TASKS</span>
+        </div>
+        <div class="today-overview">
+          <strong><span id="today-completed">0</span> / <span id="today-total">0</span></strong>
+          <span>Done</span>
+          <div><i id="today-progress"></i></div>
+        </div>
+        <form id="task-form" class="task-form">
+          <input id="task-title" maxlength="160" placeholder="Add the next concrete task…" required>
+          <select id="task-priority" aria-label="Priority">
+            <option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option>
+            <option value="4">P4</option><option value="5">P5</option>
+          </select>
+          <button type="submit">Add task</button>
+        </form>
+        <div id="task-list" class="task-list"></div>
+      </article>
+
+      <article class="panel report-panel">
+        <p class="eyebrow">PROGRESS CHECK-IN</p>
+        <h2>What changed?</h2>
+        <div class="voice-bar">
+          <button id="mic-button" type="button" class="voice-button"><span id="mic-dot"></span><span id="mic-label">Start voice input</span></button>
+          <button id="stop-speaking" type="button" class="quiet" hidden>Stop Mira</button>
+          <label class="check"><input id="auto-speak" type="checkbox" checked> Speak responses</label>
+          <span id="voice-support" class="muted"></span>
+        </div>
+        <form id="report-form">
+          <label>Task<select id="report-task" required></select></label>
+          <label>Your update<textarea id="report-text" rows="3" maxlength="2000" placeholder="I finished it, but the last section took longer than expected." required></textarea></label>
+          <label>Progress <strong id="progress-label">100%</strong><input id="report-progress" type="range" min="0" max="100" value="100"></label>
+          <div class="focus-choice">
+            <label class="check"><input id="start-focus" type="checkbox"> Start Focus Mode next</label>
+            <select id="focus-task" aria-label="Focus task"></select>
+            <select id="focus-minutes" aria-label="Focus duration"><option>15</option><option selected>25</option><option>45</option><option>60</option></select>
+          </div>
+          <button id="report-submit" type="submit" class="primary">Report to Mira</button>
+        </form>
+      </article>
+
+      <article class="panel conversation-panel" id="conversation">
+        <div class="section-heading">
+          <div><p class="eyebrow">FOLLOW-UP</p><h2>Continue the conversation</h2></div>
+          <span class="pill">CONTEXTUAL</span>
+        </div>
+        <p class="muted">Talk things through without changing task progress. Use the check-in above when work actually moves.</p>
+        <div id="conversation-list" class="conversation-list" aria-live="polite">
+          <p class="muted">No follow-up yet. Ask Mira what to do next.</p>
+        </div>
+        <form id="conversation-form" class="conversation-form">
+          <select id="conversation-task" aria-label="Optional task context"><option value="">No task context</option></select>
+          <input id="conversation-text" maxlength="2000" placeholder="I feel stuck on where to begin…" required>
+          <button id="conversation-submit" type="submit" class="primary">Send</button>
+        </form>
+      </article>
+
+      <article class="panel direction-panel" id="direction">
+        <div class="section-heading"><div><p class="eyebrow">DIRECTION</p><h2>Goals</h2></div><span id="goal-count" class="pill">0 ACTIVE</span></div>
+        <form id="goal-form" class="inline-form"><input id="goal-title" maxlength="180" placeholder="Define an outcome…" required><button>Add goal</button></form>
+        <div id="goal-list" class="goal-list"></div>
+      </article>
+
+      <article class="panel commitment-panel">
+        <div class="section-heading"><div><p class="eyebrow">YOUR WORD</p><h2>Commitments</h2></div><span id="commitment-count" class="pill">0 OPEN</span></div>
+        <form id="commitment-form">
+          <input id="commitment-statement" maxlength="300" placeholder="I will finish the first draft by…" required>
+          <select id="commitment-task" aria-label="Related task"><option value="">No linked task</option></select>
+          <input id="commitment-due" type="datetime-local" aria-label="Due time">
+          <button>Add commitment</button>
+        </form>
+        <div id="commitment-list" class="commitment-list"></div>
+      </article>
+
+      <article class="panel memory-panel" id="memory">
+        <div class="section-heading"><div><p class="eyebrow">USER-CONTROLLED</p><h2>Mira’s memory</h2></div><span id="memory-count" class="pill">0 MEMORIES</span></div>
+        <p class="muted">Only memories shown here can enter Mira’s reasoning context. You can correct or delete any of them.</p>
+        <form id="memory-form">
+          <select id="memory-kind" aria-label="Memory type"><option value="preference">Preference</option><option value="fact">Fact</option><option value="pattern">Pattern</option><option value="reflection">Reflection</option></select>
+          <input id="memory-content" maxlength="500" placeholder="I focus better before checking messages…" required>
+          <label>Importance <input id="memory-importance" type="range" min="0" max="100" value="50"></label>
+          <select id="memory-expiry" aria-label="Memory expiration"><option value="">No expiration</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select>
+          <button>Add memory</button>
+        </form>
+        <div id="memory-list" class="memory-list"></div>
+      </article>
+    </section>
+  </main>
+  <div id="toast" role="status"></div>
+  <script src="/static/app.js?v=visual-2"></script>
+</body>
+</html>

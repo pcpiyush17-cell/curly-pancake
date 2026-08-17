@@ -2,13 +2,39 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class ServerEnvelope(BaseModel):
+    protocol_version: Literal["0.1"]
+    event_id: str = Field(min_length=1, max_length=100)
+    session_id: str = Field(min_length=1, max_length=100)
+    type: str = Field(min_length=1, max_length=100)
+    timestamp: datetime
+    correlation_id: str | None = Field(default=None, max_length=100)
+    requires_ack: bool
+    payload: dict[str, Any]
+
+
+class ClientEnvelope(BaseModel):
+    protocol_version: Literal["0.1"]
+    event_id: str = Field(min_length=1, max_length=100)
+    session_id: str = Field(min_length=1, max_length=100)
+    type: str = Field(min_length=1, max_length=100)
+    timestamp: datetime
+    correlation_id: str | None = Field(default=None, max_length=100)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClientAck(BaseModel):
+    event_id: str = Field(min_length=1, max_length=100)
+    status: Literal["applied", "failed"]
 
 
 class TaskStatus(StrEnum):
@@ -16,6 +42,7 @@ class TaskStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     BLOCKED = "blocked"
+    ARCHIVED = "archived"
 
 
 class MiraState(StrEnum):
@@ -32,9 +59,40 @@ class Task(BaseModel):
     status: TaskStatus = TaskStatus.TODO
     progress: float = Field(default=0, ge=0, le=1)
     priority: int = Field(default=3, ge=1, le=5)
+    goal_id: str | None = None
     due_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    priority: int = Field(default=3, ge=1, le=5)
+    goal_id: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_is_not_blank(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("title must not be blank")
+        return title
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    priority: int | None = Field(default=None, ge=1, le=5)
+    goal_id: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def updated_title_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        title = value.strip()
+        if not title:
+            raise ValueError("title must not be blank")
+        return title
 
 
 class Goal(BaseModel):
@@ -42,6 +100,18 @@ class Goal(BaseModel):
     title: str
     status: Literal["active", "achieved", "paused"] = "active"
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class GoalCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+
+    @field_validator("title")
+    @classmethod
+    def goal_title_is_not_blank(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("title must not be blank")
+        return title
 
 
 class Commitment(BaseModel):
@@ -53,12 +123,63 @@ class Commitment(BaseModel):
     kept: bool | None = None
 
 
+class CommitmentCreate(BaseModel):
+    statement: str = Field(min_length=1, max_length=300)
+    task_id: str | None = None
+    due_at: datetime | None = None
+
+    @field_validator("statement")
+    @classmethod
+    def statement_is_not_blank(cls, value: str) -> str:
+        statement = value.strip()
+        if not statement:
+            raise ValueError("statement must not be blank")
+        return statement
+
+
 class Memory(BaseModel):
     id: str
     kind: Literal["preference", "pattern", "fact", "reflection"]
     content: str
     importance: float = Field(default=0.5, ge=0, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    source: Literal["user", "reflection", "inferred"] = "user"
+    expires_at: datetime | None = None
     created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class MemoryCreate(BaseModel):
+    kind: Literal["preference", "pattern", "fact", "reflection"]
+    content: str = Field(min_length=1, max_length=500)
+    importance: float = Field(default=0.5, ge=0, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    expires_at: datetime | None = None
+
+    @field_validator("content")
+    @classmethod
+    def memory_content_is_not_blank(cls, value: str) -> str:
+        content = value.strip()
+        if not content:
+            raise ValueError("content must not be blank")
+        return content
+
+
+class MemoryUpdate(BaseModel):
+    content: str | None = Field(default=None, min_length=1, max_length=500)
+    importance: float | None = Field(default=None, ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    expires_at: datetime | None = None
+
+    @field_validator("content")
+    @classmethod
+    def updated_memory_is_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        content = value.strip()
+        if not content:
+            raise ValueError("content must not be blank")
+        return content
 
 
 class FocusSession(BaseModel):
@@ -67,7 +188,8 @@ class FocusSession(BaseModel):
     planned_minutes: int = Field(ge=1, le=240)
     started_at: datetime = Field(default_factory=utc_now)
     ended_at: datetime | None = None
-    status: Literal["active", "completed", "cancelled"] = "active"
+    paused_at: datetime | None = None
+    status: Literal["active", "paused", "completed", "cancelled"] = "active"
 
 
 class Expression(BaseModel):
@@ -118,6 +240,31 @@ class MiraResponse(BaseModel):
     pause_before_ms: int = Field(default=0, ge=0, le=3000)
 
 
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class ConversationMessage(BaseModel):
+    id: str
+    session_id: str
+    role: Literal["user", "mira"]
+    content: str = Field(min_length=1, max_length=2000)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ConversationMessageSent(BaseModel):
+    type: Literal["conversation.message.sent"] = "conversation.message.sent"
+    source: Literal["voice", "text"] = "text"
+    text: str = Field(min_length=1, max_length=2000)
+    task_id: str | None = None
+
+
+class ConversationTurn(BaseModel):
+    user_message: ConversationMessage
+    mira_message: ConversationMessage
+    response: MiraResponse
+
+
 class ProgressReported(BaseModel):
     type: Literal["progress.reported"] = "progress.reported"
     source: Literal["voice", "text"]
@@ -139,12 +286,28 @@ class SnapshotRequested(BaseModel):
     type: Literal["session.snapshot.requested"] = "session.snapshot.requested"
 
 
+class VoiceLifecycleEvent(BaseModel):
+    type: Literal[
+        "user.speech.started",
+        "user.speech.completed",
+        "mira.speech.started",
+        "mira.speech.completed",
+        "mira.speech.interrupted",
+    ]
+    transcript: str | None = Field(default=None, max_length=2000)
+
+
 ClientEvent = Annotated[
-    ProgressReported | SnapshotRequested, Field(discriminator="type")
+    ProgressReported | ConversationMessageSent | SnapshotRequested | VoiceLifecycleEvent,
+    Field(discriminator="type"),
 ]
 
 
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
+    goals: list[Goal] = Field(default_factory=list)
+    commitments: list[Commitment] = Field(default_factory=list)
+    memories: list[Memory] = Field(default_factory=list)
     active_focus_session: FocusSession | None = None
-
+    focus_history: list[FocusSession] = Field(default_factory=list)
+    conversation: list[ConversationMessage] = Field(default_factory=list)
