@@ -50,6 +50,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     app.state.service = service
     app.state.repository = repository
     app.state.speech = build_speech_provider()
+    app.state.last_voice_error = None
     web_dir = Path(__file__).parent / "web"
     app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
@@ -76,6 +77,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             "provider": provider.name,
             "transcription_enabled": provider.transcription_enabled,
             "synthesis_enabled": provider.synthesis_enabled,
+            "last_error": app.state.last_voice_error,
         }
 
     @app.post("/api/voice/transcribe")
@@ -91,8 +93,28 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         content_type = request.headers.get("content-type", "audio/webm")
         try:
             text = await asyncio.to_thread(provider.transcribe, audio, content_type)
-        except Exception:
-            raise HTTPException(status_code=502, detail="Transcription provider failed")
+            app.state.last_voice_error = None
+        except Exception as error:
+            status_code = getattr(error, "status_code", None)
+            raw_code = getattr(error, "code", None)
+            code = str(raw_code) if raw_code is not None else None
+            if status_code == 401:
+                message = "OpenAI rejected the API key"
+            elif status_code == 429:
+                message = "OpenAI transcription quota or rate limit was reached"
+            elif status_code in {400, 415, 422}:
+                message = "OpenAI rejected the recorded audio format"
+            elif status_code == 404:
+                message = "The configured transcription model is unavailable"
+            else:
+                message = "Could not connect to OpenAI transcription"
+            app.state.last_voice_error = {
+                "type": type(error).__name__,
+                "status_code": status_code,
+                "code": code,
+                "message": message,
+            }
+            raise HTTPException(status_code=502, detail=app.state.last_voice_error)
         return {"text": text}
 
     @app.post("/api/voice/speak")

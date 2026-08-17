@@ -101,7 +101,7 @@ def test_dashboard_and_task_creation(tmp_path):
     with TestClient(app) as client:
         dashboard = client.get("/")
         assert dashboard.status_code == 200
-        assert "Make the next move real" in dashboard.text
+        assert "Good evening, Piyush" in dashboard.text
         assert client.get("/static/app.js").status_code == 200
         assert client.get("/static/assets/avatar/mira-neutral.png").status_code == 200
 
@@ -536,6 +536,14 @@ class StubSpeechProvider:
         return b"mp3-bytes"
 
 
+class FailingTranscriptionProvider(StubSpeechProvider):
+    def transcribe(self, audio, content_type):
+        error = RuntimeError("upstream unavailable")
+        error.status_code = 429
+        error.code = "rate_limit_exceeded"
+        raise error
+
+
 def test_provider_backed_speech_endpoints(tmp_path):
     app = create_app(tmp_path / "test.db")
     app.state.speech = StubSpeechProvider()
@@ -545,6 +553,7 @@ def test_provider_backed_speech_endpoints(tmp_path):
             "provider": "stub-speech",
             "transcription_enabled": True,
             "synthesis_enabled": True,
+            "last_error": None,
         }
 
         transcript = client.post(
@@ -568,3 +577,22 @@ def test_speech_endpoints_fall_back_when_not_configured(tmp_path):
         assert status["provider"] == "browser"
         assert client.post("/api/voice/transcribe", content=b"audio").status_code == 503
         assert client.post("/api/voice/speak", json={"text": "Hello"}).status_code == 503
+
+
+def test_transcription_failure_exposes_safe_diagnostic(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    app.state.speech = FailingTranscriptionProvider()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/voice/transcribe",
+            content=b"recorded-audio",
+            headers={"content-type": "audio/webm;codecs=opus"},
+        )
+        assert response.status_code == 502
+        assert response.json()["detail"] == {
+            "type": "RuntimeError",
+            "status_code": 429,
+            "code": "rate_limit_exceeded",
+            "message": "OpenAI transcription quota or rate limit was reached",
+        }
+        assert client.get("/api/voice/status").json()["last_error"]["status_code"] == 429
