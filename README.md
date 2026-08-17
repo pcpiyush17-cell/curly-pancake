@@ -53,6 +53,15 @@ Each record carries a source, confidence, and importance score. Mira receives at
 most five non-expired memories ranked by simple lexical relevance and importance;
 the system does not create hidden profiles or require vector storage.
 
+## Conversational follow-up
+
+The dashboard also supports ordinary follow-up conversation over the versioned
+WebSocket. Each user/Mira turn is persisted per session, and Mira receives the
+12 most recent messages plus optional task, active Focus, and relevant memory
+context. Conversation replies deliberately carry no UI actions: tasks,
+commitments, memories, and Focus sessions change only through their explicit
+commands or the progress check-in.
+
 ## Voice adapter
 
 The dashboard uses browser-native streaming speech recognition and speech

@@ -244,6 +244,27 @@ class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
 
 
+class ConversationMessage(BaseModel):
+    id: str
+    session_id: str
+    role: Literal["user", "mira"]
+    content: str = Field(min_length=1, max_length=2000)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ConversationMessageSent(BaseModel):
+    type: Literal["conversation.message.sent"] = "conversation.message.sent"
+    source: Literal["voice", "text"] = "text"
+    text: str = Field(min_length=1, max_length=2000)
+    task_id: str | None = None
+
+
+class ConversationTurn(BaseModel):
+    user_message: ConversationMessage
+    mira_message: ConversationMessage
+    response: MiraResponse
+
+
 class ProgressReported(BaseModel):
     type: Literal["progress.reported"] = "progress.reported"
     source: Literal["voice", "text"]
@@ -277,7 +298,7 @@ class VoiceLifecycleEvent(BaseModel):
 
 
 ClientEvent = Annotated[
-    ProgressReported | SnapshotRequested | VoiceLifecycleEvent,
+    ProgressReported | ConversationMessageSent | SnapshotRequested | VoiceLifecycleEvent,
     Field(discriminator="type"),
 ]
 
@@ -289,3 +310,4 @@ class SessionSnapshot(BaseModel):
     memories: list[Memory] = Field(default_factory=list)
     active_focus_session: FocusSession | None = None
     focus_history: list[FocusSession] = Field(default_factory=list)
+    conversation: list[ConversationMessage] = Field(default_factory=list)

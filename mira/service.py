@@ -10,6 +10,9 @@ from mira.models import (
     GoalCreate,
     Commitment,
     CommitmentCreate,
+    ConversationMessage,
+    ConversationMessageSent,
+    ConversationTurn,
     MiraResponse,
     Memory,
     MemoryCreate,
@@ -23,7 +26,12 @@ from mira.models import (
     utc_now,
 )
 from mira.policy import DeterministicMiraPolicy
-from mira.reasoning import MiraContext, SafeReasoningEngine, build_reasoning_engine
+from mira.reasoning import (
+    ConversationContext,
+    MiraContext,
+    SafeReasoningEngine,
+    build_reasoning_engine,
+)
 
 
 class MiraService:
@@ -180,7 +188,48 @@ class MiraService:
             session_id, event.type, event.model_dump(mode="json")
         )
 
-    def snapshot(self) -> SessionSnapshot:
+    def converse(
+        self, session_id: str, event: ConversationMessageSent
+    ) -> ConversationTurn:
+        current_task = None
+        if event.task_id:
+            current_task = self.repository.get_task(event.task_id)
+            if current_task is None:
+                raise KeyError(event.task_id)
+        user_message = self.repository.save_conversation_message(
+            ConversationMessage(
+                id=f"message-{uuid4().hex[:12]}", session_id=session_id,
+                role="user", content=event.text,
+            )
+        )
+        context = ConversationContext(
+            event=event,
+            recent_messages=self.repository.conversation_messages(session_id, 12),
+            current_task=current_task,
+            active_focus_session=self.repository.active_focus_session(),
+            relevant_memories=self.relevant_memories(event.text),
+        )
+        response = self.reasoning.respond_conversation(context)
+        mira_message = self.repository.save_conversation_message(
+            ConversationMessage(
+                id=f"message-{uuid4().hex[:12]}", session_id=session_id,
+                role="mira", content=response.speech,
+            )
+        )
+        self.repository.record_event(
+            session_id, event.type, event.model_dump(mode="json")
+        )
+        self.repository.record_event(
+            session_id, "conversation.mira.responded",
+            response.model_dump(mode="json"),
+        )
+        return ConversationTurn(
+            user_message=user_message,
+            mira_message=mira_message,
+            response=response,
+        )
+
+    def snapshot(self, session_id: str = "dashboard") -> SessionSnapshot:
         return SessionSnapshot(
             tasks=[
                 task
@@ -192,4 +241,5 @@ class MiraService:
             memories=self.repository.list_memories(),
             active_focus_session=self.repository.active_focus_session(),
             focus_history=self.repository.focus_history(),
+            conversation=self.repository.conversation_messages(session_id),
         )

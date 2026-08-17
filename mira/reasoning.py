@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from mira.models import (
     Commitment,
+    ConversationMessage,
+    ConversationMessageSent,
     Expression,
     FocusSession,
     Gesture,
@@ -44,6 +46,14 @@ class MiraContext(BaseModel):
     active_focus_session: FocusSession | None = None
 
 
+class ConversationContext(BaseModel):
+    event: ConversationMessageSent
+    recent_messages: list[ConversationMessage] = Field(default_factory=list)
+    current_task: Task | None = None
+    active_focus_session: FocusSession | None = None
+    relevant_memories: list[Memory] = Field(default_factory=list)
+
+
 class MiraPresentation(BaseModel):
     """Provider-owned speech and embodiment fields; every field is required."""
 
@@ -70,6 +80,18 @@ class DeterministicReasoningProvider:
 
     def generate(self, context: MiraContext) -> MiraResponse:
         return self.policy.respond(context.current_task, context.active_focus_session)
+
+    def generate_conversation(self, context: ConversationContext) -> MiraResponse:
+        task_note = f" Stay with {context.current_task.title}." if context.current_task else ""
+        return MiraResponse(
+            speech=f"I’m with you.{task_note} What’s the next concrete move?",
+            state=MiraState.CURIOUS,
+            tone="calm",
+            tone_intensity=0.35,
+            expression=Expression(primary="attentive", intensity=0.4),
+            gesture=Gesture(type="small_nod", intensity=0.2),
+            pause_before_ms=350,
+        )
 
 
 class OpenAIReasoningProvider:
@@ -108,6 +130,32 @@ class OpenAIReasoningProvider:
             ui_actions=[],
         )
 
+    def generate_conversation(self, context: ConversationContext) -> MiraResponse:
+        response = self.client.responses.parse(
+            model=self.model,
+            input=[
+                {"role": "system", "content": PERSONA_INSTRUCTIONS},
+                {
+                    "role": "user",
+                    "content": (
+                        "Continue this execution-focused conversation. Ordinary "
+                        "conversation cannot change tasks, commitments, memories, or "
+                        "Focus Mode. Never claim that you have changed or will "
+                        "automatically change any of them. If a state change is needed, "
+                        "briefly direct the user to the progress check-in or explicit "
+                        "control that performs it. Give one concrete next step and do "
+                        "not invent work the user has completed.\n"
+                        + context.model_dump_json(exclude_none=True)
+                    ),
+                },
+            ],
+            text_format=MiraPresentation,
+        )
+        if response.output_parsed is None:
+            raise ValueError("Reasoning provider returned no structured response")
+        presentation = response.output_parsed
+        return MiraResponse(**presentation.model_dump(), ui_actions=[])
+
 
 class SafeReasoningEngine:
     def __init__(
@@ -131,6 +179,25 @@ class SafeReasoningEngine:
             self.last_provider = self.primary.name
             self.last_error = None
             return proposed.model_copy(update={"ui_actions": authoritative.ui_actions})
+        except Exception as error:
+            self.last_provider = self.fallback.name
+            self.last_error = {
+                "type": type(error).__name__,
+                "status_code": getattr(error, "status_code", None),
+                "code": getattr(error, "code", None),
+            }
+            return authoritative
+
+    def respond_conversation(self, context: ConversationContext) -> MiraResponse:
+        authoritative = self.fallback.generate_conversation(context)
+        generator = getattr(self.primary, "generate_conversation", None)
+        if generator is None:
+            return authoritative
+        try:
+            proposed = generator(context)
+            self.last_provider = self.primary.name
+            self.last_error = None
+            return proposed.model_copy(update={"ui_actions": []})
         except Exception as error:
             self.last_provider = self.fallback.name
             self.last_error = {

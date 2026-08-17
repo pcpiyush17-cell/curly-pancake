@@ -1,4 +1,4 @@
-const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
+const state = { tasks: [], goals: [], commitments: [], memories: [], conversation: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
 const $ = (id) => document.getElementById(id);
 const portraitAssets = {
   neutral: "/static/assets/avatar/mira-neutral.png",
@@ -52,10 +52,12 @@ function renderTasks() {
       <span class="task-actions"><button type="button" class="quiet edit-task" data-id="${task.id}">Edit</button><button type="button" class="danger archive-task" data-id="${task.id}">Archive</button></span>
     </div>`).join("") || `<p class="muted">Your queue is empty. Add one concrete task.</p>`;
   const options = sorted.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("");
-  const selectedReport = $("report-task").value, selectedFocus = $("focus-task").value;
+  const selectedReport = $("report-task").value, selectedFocus = $("focus-task").value, selectedConversation = $("conversation-task").value;
   $("report-task").innerHTML = options; $("focus-task").innerHTML = options;
+  $("conversation-task").innerHTML = `<option value="">No task context</option>${options}`;
   if (sorted.some(t => t.id === selectedReport)) $("report-task").value = selectedReport;
   if (sorted.some(t => t.id === selectedFocus)) $("focus-task").value = selectedFocus;
+  if (sorted.some(t => t.id === selectedConversation)) $("conversation-task").value = selectedConversation;
   $("commitment-task").innerHTML = `<option value="">No linked task</option>${options}`;
   document.querySelectorAll(".edit-task").forEach(button => button.addEventListener("click", editTask));
   document.querySelectorAll(".archive-task").forEach(button => button.addEventListener("click", archiveTask));
@@ -66,8 +68,22 @@ function escapeHtml(value) {
 }
 
 function applySnapshot(snapshot) {
-  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.memories = snapshot.memories || []; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderMemories(); renderHistory();
+  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.memories = snapshot.memories || []; state.conversation = snapshot.conversation || []; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderMemories(); renderConversation(); renderHistory();
   if (state.focus) startTimer(state.focus); else resetTimer();
+}
+
+function renderConversation() {
+  const list = $("conversation-list");
+  list.innerHTML = state.conversation.map(message => `
+    <div class="conversation-message ${message.role}">
+      <span>${message.role === "mira" ? "Mira" : "You"}</span>
+      <p>${escapeHtml(message.content)}</p>
+    </div>`).join("") || `<p class="muted">No follow-up yet. Ask Mira what to do next.</p>`;
+  list.scrollTop = list.scrollHeight;
+}
+
+function appendConversationMessage(message) {
+  if (!state.conversation.some(existing => existing.id === message.id)) state.conversation.push(message);
 }
 
 function renderGoals() {
@@ -126,6 +142,9 @@ function setThinking(thinking) {
   const button = $("report-submit");
   button.disabled = thinking;
   button.textContent = thinking ? "Mira is thinking…" : "Report to Mira";
+  const conversationButton = $("conversation-submit");
+  conversationButton.disabled = thinking;
+  conversationButton.textContent = thinking ? "Mira is thinking…" : "Send";
   if (thinking) {
     $("mira-state").textContent = "THINKING";
     $("mira-tone").textContent = "considering the update";
@@ -195,6 +214,12 @@ function connect() {
       if (message.type === "session.ready" || message.type === "session.snapshot") applySnapshot(message.payload);
       if (message.type === "mira.thinking") setThinking(true);
       if (message.type === "mira.response") applyMira(message.payload);
+      if (message.type === "conversation.turn") {
+        appendConversationMessage(message.payload.user_message);
+        appendConversationMessage(message.payload.mira_message);
+        renderConversation();
+        applyMira(message.payload.response);
+      }
       if (message.type === "error") { setThinking(false); toast(message.payload?.detail || "Mira could not process that update."); }
     } catch (error) {
       acknowledgementStatus = "failed";
@@ -374,6 +399,16 @@ $("report-form").addEventListener("submit", e => {
   });
   $("report-text").value = "";
   state.reportSource = "text";
+});
+$("conversation-form").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return toast("Mira is reconnecting. Try again in a moment.");
+  setThinking(true);
+  sendClientEvent("conversation.message.sent", {
+    source:"text", text:$("conversation-text").value,
+    task_id:$("conversation-task").value || null
+  });
+  $("conversation-text").value = "";
 });
 $("focus-toggle").addEventListener("click", () => transitionFocus(state.focus?.status === "paused" ? "resume" : "pause"));
 $("focus-complete").addEventListener("click", () => transitionFocus("complete"));

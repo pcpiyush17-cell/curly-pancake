@@ -16,6 +16,7 @@ from mira.models import (
     ClientAck,
     ClientEnvelope,
     ClientEvent,
+    ConversationMessageSent,
     CommitmentCreate,
     GoalCreate,
     MemoryCreate,
@@ -218,7 +219,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
         await websocket.accept()
         await send_event(
-            "session.ready", service.snapshot().model_dump(mode="json")
+            "session.ready", service.snapshot(session_id).model_dump(mode="json")
         )
         for pending in repository.pending_outbound_envelopes(session_id):
             await websocket.send_json(pending)
@@ -279,10 +280,25 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                             requires_ack=True,
                             correlation_id=correlation_id,
                         )
+                    elif isinstance(event, ConversationMessageSent):
+                        await send_event(
+                            "mira.thinking",
+                            {"task_id": event.task_id},
+                            correlation_id=correlation_id,
+                        )
+                        turn = await asyncio.to_thread(
+                            service.converse, session_id, event
+                        )
+                        await send_event(
+                            "conversation.turn",
+                            turn.model_dump(mode="json"),
+                            requires_ack=True,
+                            correlation_id=correlation_id,
+                        )
                     elif isinstance(event, SnapshotRequested):
                         await send_event(
                             "session.snapshot",
-                            service.snapshot().model_dump(mode="json"),
+                            service.snapshot(session_id).model_dump(mode="json"),
                             correlation_id=correlation_id,
                         )
                     elif isinstance(event, VoiceLifecycleEvent):
