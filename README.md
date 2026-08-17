@@ -65,6 +65,9 @@ Set `MIRA_OPENAI_STT_MODEL` and/or `MIRA_OPENAI_TTS_MODEL` to enable the
 provider-backed adapters. Audio uploads are limited to 10 MB, used in memory for
 transcription, and are not persisted. Any provider failure falls back to the
 browser adapter; interruption cancels playback and the in-flight audio request.
+Speech pauses are cancellable, the portrait exposes preparing/speaking activity,
+and interruption clears pending playback before returning Mira to an attentive
+state. This prevents delayed audio from starting after the user has said stop.
 
 In a second terminal, run the simulated Unreal client. It deliberately drops
 its connection before acknowledging a response, reconnects, verifies the exact
