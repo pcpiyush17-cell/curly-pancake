@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mira — Execution Companion</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=portrait-3">
 </head>
 <body>
   <main class="shell">
@@ -19,8 +19,9 @@
     <section class="grid">
       <article class="panel mira-panel">
         <div class="avatar" id="avatar" aria-label="Mira expression">
-          <div class="orb"></div>
-          <span id="mira-state">ATTENTIVE</span>
+          <img class="portrait-layer active" src="/static/assets/avatar/mira-neutral.png" alt="Mira, attentive and ready">
+          <img class="portrait-layer" src="/static/assets/avatar/mira-neutral.png" alt="" aria-hidden="true">
+          <span class="avatar-state" id="mira-state">ATTENTIVE</span>
         </div>
         <div class="mira-copy">
           <p class="eyebrow">MIRA SAYS</p>
@@ -118,6 +119,6 @@
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=portrait-3"></script>
 </body>
 </html>

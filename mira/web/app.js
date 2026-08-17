@@ -1,5 +1,40 @@
-const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio: null, speechAbort: null };
+const state = { tasks: [], goals: [], commitments: [], memories: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio: null, speechAbort: null, portraitCue:"neutral", portraitRequest:0 };
 const $ = (id) => document.getElementById(id);
+const portraitAssets = {
+  neutral: "/static/assets/avatar/mira-neutral.png",
+  attentive: "/static/assets/avatar/mira-listening.png",
+  focused: "/static/assets/avatar/mira-focused.png",
+  raised_eyebrow: "/static/assets/avatar/mira-skeptical.png",
+  soft_smile: "/static/assets/avatar/mira-warm-smile.png",
+  pleased: "/static/assets/avatar/mira-pleased.png"
+};
+
+function preloadPortraits() {
+  Object.values(portraitAssets).forEach(source => { const image = new Image(); image.src = source; });
+}
+
+function setPortrait(cue="neutral", stateLabel=null) {
+  if (stateLabel) $("avatar").dataset.state = stateLabel;
+  const normalizedCue = portraitAssets[cue] ? cue : "neutral";
+  const source = portraitAssets[normalizedCue];
+  if (normalizedCue === state.portraitCue) return;
+  const request = ++state.portraitRequest;
+  const layers = [...document.querySelectorAll(".portrait-layer")];
+  const current = layers.find(layer => layer.classList.contains("active"));
+  const next = layers.find(layer => layer !== current);
+  const reveal = () => {
+    if (request !== state.portraitRequest) return;
+    current.classList.remove("active"); next.classList.add("active");
+    state.portraitCue = normalizedCue;
+  };
+  next.src = source;
+  if (next.complete) reveal(); else next.addEventListener("load", reveal, {once:true});
+}
+
+function portraitCueFor(response) {
+  return {CHALLENGING:"raised_eyebrow",CELEBRATING:"pleased",FOCUSING:"focused",CURIOUS:"attentive"}[response.state]
+    || response.expression.primary || "neutral";
+}
 
 function toast(message) {
   const el = $("toast"); el.textContent = message; el.classList.add("show");
@@ -73,6 +108,7 @@ function applyMira(response) {
   $("mira-state").textContent = response.state;
   $("mira-tone").textContent = `${response.tone} · intensity ${Math.round(response.tone_intensity * 100)}% · ${response.expression.primary.replaceAll("_", " ")}`;
   $("avatar").dataset.state = response.state;
+  setPortrait(portraitCueFor(response), response.state);
   setThinking(false);
   response.ui_actions.forEach(action => {
     if (action.type === "update_task") {
@@ -94,11 +130,13 @@ function setThinking(thinking) {
     $("mira-tone").textContent = "considering the update";
     $("mira-speech").textContent = "…";
     $("avatar").dataset.state = "THINKING";
+    setPortrait("focused", "THINKING");
   }
 }
 
 function startTimer(focus) {
   state.focus = focus; clearInterval(state.timerHandle);
+  document.body.classList.toggle("focus-active", ["active","paused"].includes(focus.status));
   const task = state.tasks.find(t => t.id === focus.task_id);
   $("focus-title").textContent = task?.title || "Focused session"; $("focus-status").textContent = focus.status.toUpperCase();
   $("focus-controls").hidden = false; $("focus-toggle").textContent = focus.status === "paused" ? "Resume" : "Pause";
@@ -115,7 +153,7 @@ function startTimer(focus) {
 }
 
 function resetTimer() {
-  clearInterval(state.timerHandle); state.focus = null; $("focus-title").textContent = "No session active"; $("focus-status").textContent = "IDLE"; $("timer").textContent = "25:00"; $("timer-progress").style.width = "0"; $("focus-controls").hidden = true; $("focus-detail").textContent = "Complete a task and ask Mira to start the next focus block.";
+  clearInterval(state.timerHandle); state.focus = null; document.body.classList.remove("focus-active"); $("focus-title").textContent = "No session active"; $("focus-status").textContent = "IDLE"; $("timer").textContent = "25:00"; $("timer-progress").style.width = "0"; $("focus-controls").hidden = true; $("focus-detail").textContent = "Complete a task and ask Mira to start the next focus block.";
 }
 
 async function editTask(event) {
@@ -191,7 +229,7 @@ function interruptMira() {
   if (state.speechAudio) { state.speechAudio.pause(); state.speechAudio.currentTime = 0; state.speechAudio = null; }
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   state.speaking = false; $("stop-speaking").hidden = true;
-  sendVoiceEvent("mira.speech.interrupted"); $("mira-state").textContent = "INTERRUPTED";
+  sendVoiceEvent("mira.speech.interrupted"); $("mira-state").textContent = "INTERRUPTED"; setPortrait("attentive", "INTERRUPTED");
 }
 
 async function speakMira(response) {
@@ -228,7 +266,7 @@ function setupBrowserRecognition() {
   if (!Recognition) return false;
   const recognition = new Recognition(); state.recognition = recognition; recognition.continuous = false; recognition.interimResults = true; recognition.lang = "en-IN";
   let finalText = "";
-  recognition.onstart = () => { interruptMira(); state.listening = true; finalText = ""; $("mic-button").classList.add("listening"); $("mic-label").textContent = "Listening… click to stop"; $("mira-state").textContent = "LISTENING"; sendVoiceEvent("user.speech.started"); };
+  recognition.onstart = () => { interruptMira(); state.listening = true; finalText = ""; $("mic-button").classList.add("listening"); $("mic-label").textContent = "Listening… click to stop"; $("mira-state").textContent = "LISTENING"; setPortrait("attentive", "LISTENING"); sendVoiceEvent("user.speech.started"); };
   recognition.onresult = event => { let interim = ""; for (let i=event.resultIndex;i<event.results.length;i++) { const text=event.results[i][0].transcript; if (event.results[i].isFinal) finalText += text; else interim += text; } $("report-text").value = `${finalText}${interim}`.trim(); state.reportSource = "voice"; };
   recognition.onerror = event => { if (event.error !== "no-speech" && event.error !== "aborted") toast(`Voice input: ${event.error}`); };
   recognition.onend = () => { state.listening = false; $("mic-button").classList.remove("listening"); $("mic-label").textContent = "Start voice input"; if ($("report-text").value.trim()) sendVoiceEvent("user.speech.completed", $("report-text").value.trim()); };
@@ -237,7 +275,7 @@ function setupBrowserRecognition() {
 
 function setListening(active, label="Listening… click to stop") {
   state.listening = active; $("mic-button").classList.toggle("listening", active); $("mic-label").textContent = active ? label : "Start voice input";
-  if (active) { $("mira-state").textContent = "LISTENING"; sendVoiceEvent("user.speech.started"); }
+  if (active) { $("mira-state").textContent = "LISTENING"; setPortrait("attentive", "LISTENING"); sendVoiceEvent("user.speech.started"); }
 }
 
 async function startProviderRecording() {
@@ -308,4 +346,4 @@ $("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
 $("mic-button").addEventListener("click", toggleVoiceInput);
 $("stop-speaking").addEventListener("click", interruptMira);
 
-connect(); loadReasoningStatus(); setupVoice();
+preloadPortraits(); connect(); loadReasoningStatus(); setupVoice();
