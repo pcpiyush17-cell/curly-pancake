@@ -259,10 +259,37 @@ class ConversationMessageSent(BaseModel):
     task_id: str | None = None
 
 
+class ProposalOption(BaseModel):
+    id: str
+    label: str
+    action: Literal["start_focus", "resume_focus", "mark_task_blocked", "dismiss"]
+    task_id: str | None = None
+    focus_session_id: str | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=240)
+
+
+class ConversationProposal(BaseModel):
+    id: str
+    session_id: str
+    prompt: str
+    options: list[ProposalOption] = Field(min_length=1, max_length=4)
+    status: Literal["pending", "applied", "dismissed"] = "pending"
+    selected_option_id: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ProposalSelected(BaseModel):
+    type: Literal["conversation.proposal.selected"] = "conversation.proposal.selected"
+    proposal_id: str
+    option_id: str
+    source: Literal["voice", "text"] = "text"
+
+
 class ConversationTurn(BaseModel):
     user_message: ConversationMessage
     mira_message: ConversationMessage
     response: MiraResponse
+    proposal: ConversationProposal | None = None
 
 
 class ProgressReported(BaseModel):
@@ -298,7 +325,7 @@ class VoiceLifecycleEvent(BaseModel):
 
 
 ClientEvent = Annotated[
-    ProgressReported | ConversationMessageSent | SnapshotRequested | VoiceLifecycleEvent,
+    ProgressReported | ConversationMessageSent | ProposalSelected | SnapshotRequested | VoiceLifecycleEvent,
     Field(discriminator="type"),
 ]
 
@@ -311,3 +338,4 @@ class SessionSnapshot(BaseModel):
     active_focus_session: FocusSession | None = None
     focus_history: list[FocusSession] = Field(default_factory=list)
     conversation: list[ConversationMessage] = Field(default_factory=list)
+    pending_proposal: ConversationProposal | None = None

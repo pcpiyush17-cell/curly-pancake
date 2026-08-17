@@ -8,6 +8,7 @@ from pathlib import Path
 from mira.models import (
     Commitment,
     ConversationMessage,
+    ConversationProposal,
     FocusSession,
     Goal,
     Memory,
@@ -61,6 +62,13 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session
 ON conversation_messages(session_id, created_at);
+CREATE TABLE IF NOT EXISTS conversation_proposals (
+    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, prompt TEXT NOT NULL,
+    options_json TEXT NOT NULL, status TEXT NOT NULL, selected_option_id TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_proposals_session
+ON conversation_proposals(session_id, created_at);
 CREATE TABLE IF NOT EXISTS inbound_events (
     event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, created_at TEXT NOT NULL
 );
@@ -408,6 +416,44 @@ class SQLiteRepository:
             )
         return message
 
+    def save_conversation_proposal(
+        self, proposal: ConversationProposal
+    ) -> ConversationProposal:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE conversation_proposals SET status='dismissed'
+                WHERE session_id=? AND status='pending' AND id<>?""",
+                (proposal.session_id, proposal.id),
+            )
+            connection.execute(
+                """INSERT INTO conversation_proposals
+                (id,session_id,prompt,options_json,status,selected_option_id,created_at)
+                VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+                status=excluded.status, selected_option_id=excluded.selected_option_id""",
+                (
+                    proposal.id, proposal.session_id, proposal.prompt,
+                    json.dumps([option.model_dump(mode="json") for option in proposal.options]),
+                    proposal.status, proposal.selected_option_id, _dt(proposal.created_at),
+                ),
+            )
+        return proposal
+
+    def get_conversation_proposal(self, proposal_id: str) -> ConversationProposal | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM conversation_proposals WHERE id=?", (proposal_id,)
+            ).fetchone()
+        return _proposal(row) if row else None
+
+    def pending_conversation_proposal(self, session_id: str) -> ConversationProposal | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT * FROM conversation_proposals
+                WHERE session_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1""",
+                (session_id,),
+            ).fetchone()
+        return _proposal(row) if row else None
+
     def conversation_messages(
         self, session_id: str, limit: int = 20
     ) -> list[ConversationMessage]:
@@ -487,3 +533,9 @@ def _commitment(row: sqlite3.Row) -> Commitment:
     data = dict(row)
     data["kept"] = None if data["kept"] is None else bool(data["kept"])
     return Commitment(**data)
+
+
+def _proposal(row: sqlite3.Row) -> ConversationProposal:
+    data = dict(row)
+    data["options"] = json.loads(data.pop("options_json"))
+    return ConversationProposal(**data)

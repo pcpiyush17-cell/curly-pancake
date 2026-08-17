@@ -22,6 +22,7 @@ from mira.models import (
     MemoryCreate,
     MemoryUpdate,
     ProgressReported,
+    ProposalSelected,
     SnapshotRequested,
     SpeechRequest,
     TaskCreate,
@@ -341,6 +342,21 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                             requires_ack=True,
                             correlation_id=correlation_id,
                         )
+                    elif isinstance(event, ProposalSelected):
+                        await send_event(
+                            "mira.thinking",
+                            {"proposal_id": event.proposal_id},
+                            correlation_id=correlation_id,
+                        )
+                        turn = await asyncio.to_thread(
+                            service.select_proposal, session_id, event
+                        )
+                        await send_event(
+                            "conversation.turn",
+                            turn.model_dump(mode="json"),
+                            requires_ack=True,
+                            correlation_id=correlation_id,
+                        )
                     elif isinstance(event, SnapshotRequested):
                         await send_event(
                             "session.snapshot",
@@ -364,6 +380,21 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                     await send_event(
                         "error",
                         {"code": "invalid_event", "detail": error.errors()},
+                        correlation_id=correlation_id,
+                    )
+                except ValueError as error:
+                    await send_event(
+                        "error",
+                        {"code": "invalid_transition", "detail": str(error)},
+                        correlation_id=correlation_id,
+                    )
+                except Exception as error:
+                    await send_event(
+                        "error",
+                        {
+                            "code": "internal_error",
+                            "detail": f"Mira could not process this event ({type(error).__name__})",
+                        },
                         correlation_id=correlation_id,
                     )
         except WebSocketDisconnect:
