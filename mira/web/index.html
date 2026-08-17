@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mira — Execution Companion</title>
-  <link rel="stylesheet" href="/static/styles.css?v=voice-1">
+  <link rel="stylesheet" href="/static/styles.css?v=conversation-1">
 </head>
 <body>
   <main class="shell">
@@ -87,6 +87,22 @@
         </form>
       </article>
 
+      <article class="panel conversation-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">FOLLOW-UP</p><h2>Continue the conversation</h2></div>
+          <span class="pill">CONTEXTUAL</span>
+        </div>
+        <p class="muted">Talk things through without changing task progress. Use the check-in above when work actually moves.</p>
+        <div id="conversation-list" class="conversation-list" aria-live="polite">
+          <p class="muted">No follow-up yet. Ask Mira what to do next.</p>
+        </div>
+        <form id="conversation-form" class="conversation-form">
+          <select id="conversation-task" aria-label="Optional task context"><option value="">No task context</option></select>
+          <input id="conversation-text" maxlength="2000" placeholder="I feel stuck on where to begin…" required>
+          <button id="conversation-submit" type="submit" class="primary">Send</button>
+        </form>
+      </article>
+
       <article class="panel direction-panel">
         <div class="section-heading"><div><p class="eyebrow">DIRECTION</p><h2>Goals</h2></div><span id="goal-count" class="pill">0 ACTIVE</span></div>
         <form id="goal-form" class="inline-form"><input id="goal-title" maxlength="180" placeholder="Define an outcome…" required><button>Add goal</button></form>
@@ -119,6 +135,6 @@
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=voice-1"></script>
+  <script src="/static/app.js?v=conversation-1"></script>
 </body>
 </html>

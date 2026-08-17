@@ -7,6 +7,7 @@ from pathlib import Path
 
 from mira.models import (
     Commitment,
+    ConversationMessage,
     FocusSession,
     Goal,
     Memory,
@@ -54,6 +55,12 @@ CREATE TABLE IF NOT EXISTS interaction_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
     event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL,
+    content TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_session
+ON conversation_messages(session_id, created_at);
 CREATE TABLE IF NOT EXISTS inbound_events (
     event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, created_at TEXT NOT NULL
 );
@@ -386,6 +393,33 @@ class SQLiteRepository:
                 (session_id,event_type,payload_json,created_at) VALUES (?,?,?,?)""",
                 (session_id, event_type, json.dumps(payload, default=str), _dt(utc_now())),
             )
+
+    def save_conversation_message(
+        self, message: ConversationMessage
+    ) -> ConversationMessage:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO conversation_messages
+                (id,session_id,role,content,created_at) VALUES (?,?,?,?,?)""",
+                (
+                    message.id, message.session_id, message.role,
+                    message.content, _dt(message.created_at),
+                ),
+            )
+        return message
+
+    def conversation_messages(
+        self, session_id: str, limit: int = 20
+    ) -> list[ConversationMessage]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT * FROM (
+                    SELECT * FROM conversation_messages WHERE session_id=?
+                    ORDER BY created_at DESC LIMIT ?
+                ) ORDER BY created_at""",
+                (session_id, limit),
+            ).fetchall()
+        return [ConversationMessage(**dict(row)) for row in rows]
 
     def claim_inbound_event(self, event_id: str, session_id: str) -> bool:
         try:

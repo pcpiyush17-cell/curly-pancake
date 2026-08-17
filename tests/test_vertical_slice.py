@@ -297,6 +297,12 @@ def test_persona_instructions_enforce_concise_user_facing_speech():
     assert 'phrase "transcript"' in normalized
 
 
+def test_conversation_prompt_forbids_promised_state_changes():
+    source = open("mira/reasoning.py", encoding="utf-8").read()
+    assert "Never claim that you have changed or will" in source
+    assert "automatically change any of them" in source
+
+
 def test_user_controlled_memory_lifecycle_and_retrieval(tmp_path):
     app = create_app(tmp_path / "test.db")
     with TestClient(app) as client:
@@ -444,6 +450,75 @@ def test_duplicate_versioned_client_event_is_ignored(tmp_path):
             duplicate = socket.receive_json()
             assert duplicate["type"] == "client.duplicate"
             assert duplicate["payload"] == {"event_id": event["event_id"], "ignored": True}
+
+
+def test_conversation_turn_persists_without_mutating_task(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    session_id = "conversation-client"
+    with TestClient(app) as client:
+        original = next(
+            task for task in client.get("/api/snapshot").json()["tasks"]
+            if task["id"] == "task-dsa"
+        )
+        with client.websocket_connect(f"/ws/session/{session_id}") as socket:
+            assert socket.receive_json()["payload"]["conversation"] == []
+            request = versioned_event(
+                session_id,
+                "conversation.message.sent",
+                {
+                    "source": "text",
+                    "text": "I feel stuck on where to begin.",
+                    "task_id": "task-dsa",
+                },
+            )
+            socket.send_json(request)
+            assert socket.receive_json()["type"] == "mira.thinking"
+            response = socket.receive_json()
+            assert response["type"] == "conversation.turn"
+            assert response["requires_ack"] is True
+            assert response["correlation_id"] == request["event_id"]
+            turn = response["payload"]
+            assert turn["user_message"]["role"] == "user"
+            assert turn["mira_message"]["role"] == "mira"
+            assert turn["response"]["ui_actions"] == []
+            socket.send_json(
+                versioned_event(
+                    session_id,
+                    "client.ack",
+                    {"event_id": response["event_id"], "status": "applied"},
+                )
+            )
+            assert socket.receive_json()["payload"]["recorded"] is True
+            socket.send_json(versioned_event(session_id, "session.snapshot.requested"))
+            conversation = socket.receive_json()["payload"]["conversation"]
+            assert [message["role"] for message in conversation] == ["user", "mira"]
+
+        current = next(
+            task for task in client.get("/api/snapshot").json()["tasks"]
+            if task["id"] == "task-dsa"
+        )
+        assert current["progress"] == original["progress"]
+        assert current["status"] == original["status"]
+
+
+def test_conversation_history_is_scoped_to_websocket_session(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/session/first") as socket:
+            socket.receive_json()
+            socket.send_json(
+                versioned_event(
+                    "first",
+                    "conversation.message.sent",
+                    {"source": "text", "text": "Help me choose a next step."},
+                )
+            )
+            socket.receive_json()
+            socket.receive_json()
+
+        with client.websocket_connect("/ws/session/second") as socket:
+            ready = socket.receive_json()
+            assert ready["payload"]["conversation"] == []
 
 
 class StubSpeechProvider:
