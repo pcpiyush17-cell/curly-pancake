@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mira — Execution Companion</title>
-  <link rel="stylesheet" href="/static/styles.css?v=visual-2">
+  <link rel="stylesheet" href="/static/styles.css?v=continuity-1">
 </head>
 <body>
   <aside class="sidebar" aria-label="Primary navigation">
@@ -44,6 +44,13 @@
           <blockquote id="mira-speech">Tell me what moved. We’ll handle what didn’t.</blockquote>
           <p id="mira-tone">calm · ready</p>
         </div>
+        <form id="conversation-form" class="mira-composer">
+          <select id="composer-mode" aria-label="Message mode"><option value="talk">Talk</option><option value="report">Report progress</option></select>
+          <select id="conversation-task" aria-label="Optional task context"><option value="">No task context</option></select>
+          <input id="conversation-text" maxlength="2000" placeholder="Talk to Mira…" required>
+          <button id="conversation-mic" type="button" class="quiet" aria-label="Speak to Mira">●</button>
+          <button id="conversation-submit" type="submit" class="primary">Send</button>
+        </form>
       </article>
 
       <article class="panel focus-panel" id="focus">
@@ -113,15 +120,10 @@
           <div><p class="eyebrow">FOLLOW-UP</p><h2>Continue the conversation</h2></div>
           <span class="pill">CONTEXTUAL</span>
         </div>
-        <p class="muted">Talk things through without changing task progress. Use the check-in above when work actually moves.</p>
+        <p class="muted">Mira keeps the thread, but executes changes only after you confirm a visible action.</p>
         <div id="conversation-list" class="conversation-list" aria-live="polite">
           <p class="muted">No follow-up yet. Ask Mira what to do next.</p>
         </div>
-        <form id="conversation-form" class="conversation-form">
-          <select id="conversation-task" aria-label="Optional task context"><option value="">No task context</option></select>
-          <input id="conversation-text" maxlength="2000" placeholder="I feel stuck on where to begin…" required>
-          <button id="conversation-submit" type="submit" class="primary">Send</button>
-        </form>
       </article>
 
       <article class="panel direction-panel" id="direction">
@@ -165,6 +167,6 @@
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=desktop-1"></script>
+  <script src="/static/app.js?v=continuity-1"></script>
 </body>
 </html>

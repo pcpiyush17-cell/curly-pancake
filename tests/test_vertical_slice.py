@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from mira.main import create_app
-from mira.models import Expression, Gesture, MiraResponse, MiraState
+from mira.models import ConversationMessageSent, Expression, Gesture, MiraResponse, MiraState
 from mira.policy import DeterministicMiraPolicy
 from mira.reasoning import DeterministicReasoningProvider, SafeReasoningEngine
 
@@ -481,6 +481,8 @@ def test_conversation_turn_persists_without_mutating_task(tmp_path):
             assert turn["user_message"]["role"] == "user"
             assert turn["mira_message"]["role"] == "mira"
             assert turn["response"]["ui_actions"] == []
+            assert turn["proposal"]["status"] == "pending"
+            assert [option["id"] for option in turn["proposal"]["options"]] == ["a", "b", "c"]
             socket.send_json(
                 versioned_event(
                     session_id,
@@ -499,6 +501,63 @@ def test_conversation_turn_persists_without_mutating_task(tmp_path):
         )
         assert current["progress"] == original["progress"]
         assert current["status"] == original["status"]
+
+
+def test_confirmed_conversation_proposal_starts_focus(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    session_id = "proposal-client"
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/ws/session/{session_id}") as socket:
+            socket.receive_json()
+            socket.send_json(
+                versioned_event(
+                    session_id, "conversation.message.sent",
+                    {"source": "text", "text": "I wasn't able to do it.", "task_id": "task-dsa"},
+                )
+            )
+            assert socket.receive_json()["type"] == "mira.thinking"
+            proposed = socket.receive_json()
+            proposal = proposed["payload"]["proposal"]
+            assert proposed["payload"]["response"]["ui_actions"] == []
+            socket.send_json(
+                versioned_event(
+                    session_id, "client.ack",
+                    {"event_id": proposed["event_id"], "status": "applied"},
+                )
+            )
+            socket.receive_json()
+            socket.send_json(
+                versioned_event(
+                    session_id, "conversation.proposal.selected",
+                    {"proposal_id": proposal["id"], "option_id": "a", "source": "text"},
+                )
+            )
+            assert socket.receive_json()["type"] == "mira.thinking"
+            applied = socket.receive_json()["payload"]
+            assert applied["proposal"]["status"] == "applied"
+            assert applied["response"]["ui_actions"][0]["type"] == "start_focus_mode"
+            socket.send_json(versioned_event(session_id, "session.snapshot.requested"))
+            snapshot = socket.receive_json()["payload"]
+            assert snapshot["active_focus_session"]["task_id"] == "task-dsa"
+            assert snapshot["pending_proposal"] is None
+
+
+def test_natural_yes_confirms_pending_proposal(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app):
+        service = app.state.service
+        proposed = service.converse(
+            "natural-confirm",
+            ConversationMessageSent(
+                source="text", text="I could not finish it.", task_id="task-dsa"
+            ),
+        )
+        assert proposed.proposal is not None
+        applied = service.converse(
+            "natural-confirm", ConversationMessageSent(source="voice", text="Yes")
+        )
+        assert applied.proposal.status == "applied"
+        assert applied.response.ui_actions[0].type == "start_focus_mode"
 
 
 def test_conversation_history_is_scoped_to_websocket_session(tmp_path):

@@ -12,16 +12,25 @@ from mira.models import (
     CommitmentCreate,
     ConversationMessage,
     ConversationMessageSent,
+    ConversationProposal,
     ConversationTurn,
+    Expression,
     MiraResponse,
+    MiraState,
+    Gesture,
     Memory,
     MemoryCreate,
     MemoryUpdate,
     ProgressReported,
+    ProposalOption,
+    ProposalSelected,
     SessionSnapshot,
     Task,
     TaskCreate,
     TaskUpdate,
+    TaskStatus,
+    StartFocusAction,
+    UpdateTaskAction,
     VoiceLifecycleEvent,
     utc_now,
 )
@@ -191,6 +200,16 @@ class MiraService:
     def converse(
         self, session_id: str, event: ConversationMessageSent
     ) -> ConversationTurn:
+        pending = self.repository.pending_conversation_proposal(session_id)
+        option_id = self._natural_proposal_choice(event.text, pending)
+        if pending and option_id:
+            return self.select_proposal(
+                session_id,
+                ProposalSelected(
+                    proposal_id=pending.id, option_id=option_id, source=event.source
+                ),
+                user_text=event.text,
+            )
         current_task = None
         if event.task_id:
             current_task = self.repository.get_task(event.task_id)
@@ -210,6 +229,17 @@ class MiraService:
             relevant_memories=self.relevant_memories(event.text),
         )
         response = self.reasoning.respond_conversation(context)
+        proposal = self._build_proposal(session_id, event, current_task)
+        if proposal:
+            response = response.model_copy(
+                update={
+                    "speech": proposal.prompt,
+                    "state": MiraState.CURIOUS,
+                    "tone": "direct",
+                    "expression": Expression(primary="attentive", intensity=0.5),
+                    "gesture": Gesture(type="small_nod", intensity=0.2),
+                }
+            )
         mira_message = self.repository.save_conversation_message(
             ConversationMessage(
                 id=f"message-{uuid4().hex[:12]}", session_id=session_id,
@@ -227,6 +257,147 @@ class MiraService:
             user_message=user_message,
             mira_message=mira_message,
             response=response,
+            proposal=proposal,
+        )
+
+    def _build_proposal(
+        self,
+        session_id: str,
+        event: ConversationMessageSent,
+        task: Task | None,
+    ) -> ConversationProposal | None:
+        if not task:
+            return None
+        normalized = event.text.lower()
+        struggle_terms = (
+            "wasn't able", "was not able", "couldn't", "could not", "didn't do",
+            "did not do", "unable", "stuck", "not finished", "not complete",
+        )
+        if not any(term in normalized for term in struggle_terms):
+            return None
+        active_focus = self.repository.active_focus_session()
+        options: list[ProposalOption] = []
+        if active_focus and active_focus.status == "paused":
+            options.append(
+                ProposalOption(
+                    id="a", label="Resume the paused Focus session",
+                    action="resume_focus", focus_session_id=active_focus.id,
+                )
+            )
+        elif not active_focus:
+            options.append(
+                ProposalOption(
+                    id="a", label=f"Start 25 minutes on {task.title}",
+                    action="start_focus", task_id=task.id, duration_minutes=25,
+                )
+            )
+        options.extend(
+            [
+                ProposalOption(
+                    id="b", label=f"Mark {task.title} as blocked",
+                    action="mark_task_blocked", task_id=task.id,
+                ),
+                ProposalOption(id="c", label="Keep talking first", action="dismiss"),
+            ]
+        )
+        proposal = ConversationProposal(
+            id=f"proposal-{uuid4().hex[:12]}", session_id=session_id,
+            prompt="That didn’t move. Choose the next honest action—I’ll only change it after you confirm.",
+            options=options,
+        )
+        return self.repository.save_conversation_proposal(proposal)
+
+    @staticmethod
+    def _natural_proposal_choice(
+        text: str, proposal: ConversationProposal | None
+    ) -> str | None:
+        if not proposal:
+            return None
+        normalized = text.lower().strip().replace(".", "")
+        if normalized in {"yes", "yes do it", "do it", "okay", "ok", "confirm"}:
+            return proposal.options[0].id
+        for option in proposal.options:
+            if normalized in {option.id, f"option {option.id}", f"choose {option.id}"}:
+                return option.id
+        return None
+
+    def select_proposal(
+        self,
+        session_id: str,
+        event: ProposalSelected,
+        *,
+        user_text: str | None = None,
+    ) -> ConversationTurn:
+        proposal = self.repository.get_conversation_proposal(event.proposal_id)
+        if proposal is None or proposal.session_id != session_id:
+            raise KeyError(event.proposal_id)
+        if proposal.status != "pending":
+            raise ValueError("This proposal has already been resolved")
+        option = next((item for item in proposal.options if item.id == event.option_id), None)
+        if option is None:
+            raise KeyError(event.option_id)
+        ui_actions = []
+        if option.action == "start_focus" and option.task_id and option.duration_minutes:
+            focus = FocusSession(
+                id=f"focus-{uuid4().hex[:12]}", task_id=option.task_id,
+                planned_minutes=option.duration_minutes,
+            )
+            self.repository.start_focus_session(focus)
+            ui_actions.append(
+                StartFocusAction(
+                    focus_session_id=focus.id, task_id=focus.task_id,
+                    duration_minutes=focus.planned_minutes,
+                )
+            )
+            speech = f"Done. Focus Mode is on for {focus.planned_minutes} minutes."
+        elif option.action == "resume_focus" and option.focus_session_id:
+            focus = self.transition_focus(option.focus_session_id, "resume")
+            ui_actions.append(
+                StartFocusAction(
+                    focus_session_id=focus.id, task_id=focus.task_id,
+                    duration_minutes=focus.planned_minutes,
+                )
+            )
+            speech = "Done. Your paused Focus session is running again."
+        elif option.action == "mark_task_blocked" and option.task_id:
+            task = self.repository.get_task(option.task_id)
+            if task is None:
+                raise KeyError(option.task_id)
+            task.status = TaskStatus.BLOCKED
+            self.repository.save_task(task)
+            ui_actions.append(
+                UpdateTaskAction(
+                    task_id=task.id, status=task.status, progress=task.progress
+                )
+            )
+            speech = f"Done. {task.title} is marked blocked. Now name the blocker."
+        else:
+            speech = "Okay. No changes made. Tell me what actually got in the way."
+        proposal.status = "dismissed" if option.action == "dismiss" else "applied"
+        proposal.selected_option_id = option.id
+        self.repository.save_conversation_proposal(proposal)
+        user_message = self.repository.save_conversation_message(
+            ConversationMessage(
+                id=f"message-{uuid4().hex[:12]}", session_id=session_id,
+                role="user", content=user_text or option.label,
+            )
+        )
+        focus_changed = option.action in {"start_focus", "resume_focus"}
+        response = MiraResponse(
+            speech=speech, state=MiraState.FOCUSING if focus_changed else MiraState.SUPPORTIVE,
+            tone="focused" if focus_changed else "calm", tone_intensity=0.45,
+            expression=Expression(primary="focused" if focus_changed else "attentive", intensity=0.45),
+            gesture=Gesture(type="small_nod", intensity=0.25), ui_actions=ui_actions,
+        )
+        mira_message = self.repository.save_conversation_message(
+            ConversationMessage(
+                id=f"message-{uuid4().hex[:12]}", session_id=session_id,
+                role="mira", content=speech,
+            )
+        )
+        return ConversationTurn(
+            user_message=user_message, mira_message=mira_message,
+            response=response, proposal=proposal,
         )
 
     def snapshot(self, session_id: str = "dashboard") -> SessionSnapshot:
@@ -242,4 +413,5 @@ class MiraService:
             active_focus_session=self.repository.active_focus_session(),
             focus_history=self.repository.focus_history(),
             conversation=self.repository.conversation_messages(session_id),
+            pending_proposal=self.repository.pending_conversation_proposal(session_id),
         )

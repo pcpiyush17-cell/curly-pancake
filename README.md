@@ -90,6 +90,12 @@ WebSocket. Each user/Mira turn is persisted per session, and Mira receives the
 context. Conversation replies deliberately carry no UI actions: tasks,
 commitments, memories, and Focus sessions change only through their explicit
 commands or the progress check-in.
+The primary composer now sits directly beneath Mira and supports both text and
+voice. When work does not move, Mira can persist explicit choices such as
+starting Focus Mode or marking the task blocked. No proposal mutates state
+until the user clicks a choice or confirms naturally with language such as
+“yes” or “option A”. Progress mode prepares the structured check-in instead of
+silently interpreting ordinary conversation as a task update.
 
 ## Voice adapter
 

@@ -1,4 +1,4 @@
-const state = { tasks: [], goals: [], commitments: [], memories: [], conversation: [], socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
+const state = { tasks: [], goals: [], commitments: [], memories: [], conversation: [], pendingProposal:null, voiceTarget:"report", socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
 const $ = (id) => document.getElementById(id);
 const portraitAssets = {
   neutral: "/static/assets/avatar/mira-neutral.png",
@@ -72,17 +72,28 @@ function escapeHtml(value) {
 }
 
 function applySnapshot(snapshot) {
-  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.memories = snapshot.memories || []; state.conversation = snapshot.conversation || []; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderMemories(); renderConversation(); renderHistory();
+  state.tasks = snapshot.tasks; state.goals = snapshot.goals || []; state.commitments = snapshot.commitments || []; state.memories = snapshot.memories || []; state.conversation = snapshot.conversation || []; state.pendingProposal = snapshot.pending_proposal || null; state.focus = snapshot.active_focus_session; state.history = snapshot.focus_history || []; renderTasks(); renderGoals(); renderCommitments(); renderMemories(); renderConversation(); renderHistory();
   if (state.focus) startTimer(state.focus); else resetTimer();
 }
 
 function renderConversation() {
   const list = $("conversation-list");
-  list.innerHTML = state.conversation.map(message => `
+  const messages = state.conversation.map(message => `
     <div class="conversation-message ${message.role}">
       <span>${message.role === "mira" ? "Mira" : "You"}</span>
       <p>${escapeHtml(message.content)}</p>
-    </div>`).join("") || `<p class="muted">No follow-up yet. Ask Mira what to do next.</p>`;
+    </div>`).join("");
+  const proposal = state.pendingProposal?.status === "pending" ? `
+    <div class="proposal-card">
+      <strong>Choose what Mira should do</strong>
+      <div>${state.pendingProposal.options.map(option => `<button type="button" class="proposal-option" data-proposal="${state.pendingProposal.id}" data-option="${option.id}"><b>${option.id.toUpperCase()}</b>${escapeHtml(option.label)}</button>`).join("")}</div>
+      <small>You can also say “yes” or “option A”.</small>
+    </div>` : "";
+  list.innerHTML = messages || proposal ? `${messages}${proposal}` : `<p class="muted">No follow-up yet. Ask Mira what to do next.</p>`;
+  document.querySelectorAll(".proposal-option").forEach(button => button.addEventListener("click", () => {
+    setThinking(true);
+    sendClientEvent("conversation.proposal.selected", {proposal_id:button.dataset.proposal, option_id:button.dataset.option, source:"text"});
+  }));
   list.scrollTop = list.scrollHeight;
 }
 
@@ -221,6 +232,7 @@ function connect() {
       if (message.type === "conversation.turn") {
         appendConversationMessage(message.payload.user_message);
         appendConversationMessage(message.payload.mira_message);
+        state.pendingProposal = message.payload.proposal?.status === "pending" ? message.payload.proposal : null;
         renderConversation();
         applyMira(message.payload.response);
       }
@@ -331,14 +343,18 @@ function setupBrowserRecognition() {
   const recognition = new Recognition(); state.recognition = recognition; recognition.continuous = false; recognition.interimResults = true; recognition.lang = "en-IN";
   let finalText = "";
   recognition.onstart = () => { interruptMira(); state.listening = true; finalText = ""; $("mic-button").classList.add("listening"); $("mic-label").textContent = "Listening… click to stop"; $("mira-state").textContent = "LISTENING"; setPortrait("attentive", "LISTENING"); sendVoiceEvent("user.speech.started"); };
-  recognition.onresult = event => { let interim = ""; for (let i=event.resultIndex;i<event.results.length;i++) { const text=event.results[i][0].transcript; if (event.results[i].isFinal) finalText += text; else interim += text; } $("report-text").value = `${finalText}${interim}`.trim(); state.reportSource = "voice"; };
+  recognition.onresult = event => { let interim = ""; for (let i=event.resultIndex;i<event.results.length;i++) { const text=event.results[i][0].transcript; if (event.results[i].isFinal) finalText += text; else interim += text; } voiceField().value = `${finalText}${interim}`.trim(); state.reportSource = "voice"; };
   recognition.onerror = event => { if (event.error !== "no-speech" && event.error !== "aborted") toast(`Voice input: ${event.error}`); };
-  recognition.onend = () => { state.listening = false; $("mic-button").classList.remove("listening"); $("mic-label").textContent = "Start voice input"; if ($("report-text").value.trim()) sendVoiceEvent("user.speech.completed", $("report-text").value.trim()); };
+  recognition.onend = () => { const text = voiceField().value.trim(); setListening(false); if (text) { sendVoiceEvent("user.speech.completed", text); if (state.voiceTarget === "conversation") submitConversation("voice"); } };
   return true;
 }
 
+function voiceField() { return state.voiceTarget === "conversation" ? $("conversation-text") : $("report-text"); }
+
 function setListening(active, label="Listening… click to stop") {
   state.listening = active; $("mic-button").classList.toggle("listening", active); $("mic-label").textContent = active ? label : "Start voice input";
+  $("conversation-mic").classList.toggle("listening", active && state.voiceTarget === "conversation");
+  $("conversation-mic").textContent = active && state.voiceTarget === "conversation" ? "■" : "●";
   if (active) { $("mira-state").textContent = "LISTENING"; setPortrait("attentive", "LISTENING"); sendVoiceEvent("user.speech.started"); }
 }
 
@@ -357,7 +373,7 @@ async function startProviderRecording() {
       try {
         const result = await fetch("/api/voice/transcribe", {method:"POST",headers:{"Content-Type":blob.type},body:blob});
         if (!result.ok) { const failure = await result.json().catch(() => ({})); throw new Error(failure.detail?.message || failure.detail || "Server transcription failed"); }
-        const data = await result.json(); $("report-text").value = data.text; state.reportSource = "voice"; sendVoiceEvent("user.speech.completed", data.text);
+        const data = await result.json(); voiceField().value = data.text; state.reportSource = "voice"; sendVoiceEvent("user.speech.completed", data.text); if (state.voiceTarget === "conversation") submitConversation("voice");
       } catch (error) {
         state.voiceStatus.transcription_enabled = false;
         $("voice-support").textContent = "Browser voice · OpenAI transcription unavailable";
@@ -369,8 +385,9 @@ async function startProviderRecording() {
   } catch { toast("Microphone permission is required for voice input."); setListening(false); }
 }
 
-function toggleVoiceInput() {
+function toggleVoiceInput(target="report") {
   if (state.listening) { if (state.recorder?.state === "recording") state.recorder.stop(); else state.recognition?.stop(); return; }
+  state.voiceTarget = target;
   if (state.voiceStatus.transcription_enabled && navigator.mediaDevices && "MediaRecorder" in window) startProviderRecording();
   else if (state.recognition) state.recognition.start();
 }
@@ -378,7 +395,7 @@ function toggleVoiceInput() {
 async function setupVoice() {
   try { const response = await fetch("/api/voice/status"); if (response.ok) state.voiceStatus = await response.json(); } catch {}
   const browserRecognition = setupBrowserRecognition();
-  if (!state.voiceStatus.transcription_enabled && !browserRecognition) { $("mic-button").disabled = true; $("mic-button").classList.add("unsupported"); $("voice-support").textContent = "Voice input is unavailable in this browser."; return; }
+  if (!state.voiceStatus.transcription_enabled && !browserRecognition) { $("mic-button").disabled = true; $("conversation-mic").disabled = true; $("mic-button").classList.add("unsupported"); $("voice-support").textContent = "Voice input is unavailable in this browser."; return; }
   $("voice-support").textContent = state.voiceStatus.provider === "openai" ? "OpenAI speech · browser fallback" : "Browser voice";
 }
 
@@ -435,20 +452,34 @@ $("report-form").addEventListener("submit", e => {
   $("report-text").value = "";
   state.reportSource = "text";
 });
-$("conversation-form").addEventListener("submit", e => {
-  e.preventDefault();
+function submitConversation(source="text") {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) return toast("Mira is reconnecting. Try again in a moment.");
+  const text = $("conversation-text").value.trim();
+  if (!text) return;
+  if ($("composer-mode").value === "report") {
+    $("report-text").value = text;
+    state.reportSource = source;
+    document.querySelector(".report-panel").scrollIntoView({behavior:"smooth", block:"center"});
+    $("report-text").focus();
+    toast("Update ready—set the progress and report it.");
+    return;
+  }
   setThinking(true);
   sendClientEvent("conversation.message.sent", {
-    source:"text", text:$("conversation-text").value,
+    source, text,
     task_id:$("conversation-task").value || null
   });
   $("conversation-text").value = "";
+}
+$("conversation-form").addEventListener("submit", e => {
+  e.preventDefault();
+  submitConversation("text");
 });
 $("focus-toggle").addEventListener("click", () => transitionFocus(state.focus?.status === "paused" ? "resume" : "pause"));
 $("focus-complete").addEventListener("click", () => transitionFocus("complete"));
 $("focus-cancel").addEventListener("click", () => transitionFocus("cancel"));
-$("mic-button").addEventListener("click", toggleVoiceInput);
+$("mic-button").addEventListener("click", () => toggleVoiceInput("report"));
+$("conversation-mic").addEventListener("click", () => toggleVoiceInput("conversation"));
 $("stop-speaking").addEventListener("click", interruptMira);
 $("save-desktop-settings").addEventListener("click", async () => {
   const enabled = $("launch-startup").checked;
