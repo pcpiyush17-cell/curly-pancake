@@ -9,9 +9,11 @@ from mira.models import (
     Commitment,
     ConversationMessage,
     ConversationProposal,
+    DailyRhythmSettings,
     FocusSession,
     Goal,
     Memory,
+    PrepItem,
     Task,
     TaskStatus,
     utc_now,
@@ -79,6 +81,17 @@ CREATE TABLE IF NOT EXISTS outbound_events (
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_events_pending
 ON outbound_events(session_id, acknowledged_at) WHERE requires_ack = 1;
+CREATE TABLE IF NOT EXISTS daily_rhythm_settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1), enabled INTEGER NOT NULL,
+    morning_time TEXT NOT NULL, midday_time TEXT NOT NULL, evening_time TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS prep_items (
+    id TEXT PRIMARY KEY, week INTEGER NOT NULL, track TEXT NOT NULL,
+    title TEXT NOT NULL, description TEXT NOT NULL, planned_minutes INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'planned', task_id TEXT, completed_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
+CREATE INDEX IF NOT EXISTS idx_prep_items_week ON prep_items(week, track);
 """
 
 
@@ -132,6 +145,35 @@ class SQLiteRepository:
             return
         self.save_task(Task(id="task-ml", title="Finish ML assignment", priority=1))
         self.save_task(Task(id="task-dsa", title="Practice DSA", priority=2))
+
+    def daily_rhythm_settings(self) -> DailyRhythmSettings:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM daily_rhythm_settings WHERE id=1"
+            ).fetchone()
+        if row is None:
+            return DailyRhythmSettings()
+        data = dict(row)
+        data.pop("id", None)
+        data["enabled"] = bool(data["enabled"])
+        return DailyRhythmSettings(**data)
+
+    def save_daily_rhythm_settings(
+        self, settings: DailyRhythmSettings
+    ) -> DailyRhythmSettings:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO daily_rhythm_settings
+                (id,enabled,morning_time,midday_time,evening_time) VALUES (1,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,
+                morning_time=excluded.morning_time, midday_time=excluded.midday_time,
+                evening_time=excluded.evening_time""",
+                (
+                    int(settings.enabled), settings.morning_time,
+                    settings.midday_time, settings.evening_time,
+                ),
+            )
+        return settings
 
     def save_task(self, task: Task) -> None:
         task.updated_at = utc_now()
@@ -394,6 +436,52 @@ class SQLiteRepository:
             ).fetchall()
         return [FocusSession(**dict(row)) for row in rows]
 
+    def seed_prep_items(self, items: list[PrepItem]) -> None:
+        with self.connect() as connection:
+            for item in items:
+                connection.execute(
+                    """INSERT OR IGNORE INTO prep_items
+                    (id,week,track,title,description,planned_minutes,status,task_id,completed_at)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (item.id, item.week, item.track, item.title, item.description,
+                     item.planned_minutes, item.status, item.task_id, _dt(item.completed_at)),
+                )
+
+    def list_prep_items(self) -> list[PrepItem]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM prep_items ORDER BY week, rowid"
+            ).fetchall()
+        return [PrepItem(**dict(row)) for row in rows]
+
+    def get_prep_item(self, item_id: str) -> PrepItem | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM prep_items WHERE id=?", (item_id,)
+            ).fetchone()
+        return PrepItem(**dict(row)) if row else None
+
+    def update_prep_item(self, item_id: str, status: str) -> PrepItem:
+        completed_at = _dt(utc_now()) if status == "completed" else None
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE prep_items SET status=?, completed_at=? WHERE id=?",
+                (status, completed_at, item_id),
+            ).rowcount
+        if not changed:
+            raise KeyError(item_id)
+        return self.get_prep_item(item_id)
+
+    def link_prep_item(self, item_id: str, task_id: str) -> PrepItem:
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE prep_items SET task_id=?, status='in_progress' WHERE id=?",
+                (task_id, item_id),
+            ).rowcount
+        if not changed:
+            raise KeyError(item_id)
+        return self.get_prep_item(item_id)
+
     def record_event(self, session_id: str, event_type: str, payload: dict) -> None:
         with self.connect() as connection:
             connection.execute(
@@ -539,3 +627,4 @@ def _proposal(row: sqlite3.Row) -> ConversationProposal:
     data = dict(row)
     data["options"] = json.loads(data.pop("options_json"))
     return ConversationProposal(**data)
+

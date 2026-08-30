@@ -58,6 +58,7 @@ def test_tray_notifies_once_for_focus_and_due_commitment():
     tray.icon = FakeTrayIcon()
     tray.notified_focus = set()
     tray.notified_commitments = set()
+    tray.notified_rhythm = set()
     now = datetime.now(UTC)
     snapshot = {
         "tasks": [{"id": "task-1", "title": "Practice DSA"}],
@@ -70,6 +71,7 @@ def test_tray_notifies_once_for_focus_and_due_commitment():
             "id": "commitment-1", "statement": "Finish the review",
             "due_at": (now - timedelta(minutes=1)).isoformat(), "kept": None,
         }],
+        "daily_rhythm": {"enabled": False},
     }
 
     tray.notify_due_items(snapshot, now)
@@ -81,7 +83,35 @@ def test_tray_notifies_once_for_focus_and_due_commitment():
     ]
 
 
+def test_daily_rhythm_notifies_each_phase_once_per_day():
+    tray = desktop.DesktopTray.__new__(desktop.DesktopTray)
+    tray.icon = FakeTrayIcon()
+    tray.notified_focus = set()
+    tray.notified_commitments = set()
+    tray.notified_rhythm = set()
+    now = datetime.now().astimezone().replace(hour=9, minute=0)
+    snapshot = {
+        "tasks": [], "commitments": [], "active_focus_session": None,
+        "daily_rhythm": {
+            "enabled": True, "morning_time": "08:30",
+            "midday_time": "13:00", "evening_time": "20:30",
+        },
+    }
+
+    tray.notify_due_items(snapshot, now)
+    tray.notify_due_items(snapshot, now.replace(hour=14))
+    tray.notify_due_items(snapshot, now.replace(hour=21))
+    tray.notify_due_items(snapshot, now.replace(hour=21))
+
+    assert tray.icon.notifications == [
+        ("Morning plan", "Choose today's priorities with Mira."),
+        ("Midday check-in", "What moved-and what needs an honest adjustment?"),
+        ("Evening review", "Close the loop on today and set up tomorrow."),
+    ]
+
+
 def test_startup_command_uses_background_python():
     command = desktop.startup_command()
     assert "pythonw.exe" in command
     assert command.endswith("-m mira.desktop")
+

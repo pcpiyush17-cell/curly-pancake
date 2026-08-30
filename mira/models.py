@@ -330,6 +330,54 @@ ClientEvent = Annotated[
 ]
 
 
+class DailyRhythmSettings(BaseModel):
+    enabled: bool = False
+    morning_time: str = Field(default="08:30", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    midday_time: str = Field(default="13:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    evening_time: str = Field(default="20:30", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    @model_validator(mode="after")
+    def times_are_in_order(self) -> "DailyRhythmSettings":
+        if not self.morning_time < self.midday_time < self.evening_time:
+            raise ValueError("Daily Rhythm times must be in morning, midday, evening order")
+        return self
+
+
+class PrepItem(BaseModel):
+    id: str
+    week: int = Field(ge=1, le=12)
+    track: Literal["dsa", "fundamentals", "design", "practice", "review"]
+    title: str
+    description: str
+    planned_minutes: int = Field(ge=15, le=1200)
+    status: Literal["planned", "in_progress", "completed", "skipped"] = "planned"
+    task_id: str | None = None
+    completed_at: datetime | None = None
+
+
+class PrepItemUpdate(BaseModel):
+    status: Literal["planned", "in_progress", "completed", "skipped"]
+
+
+class PrepWeek(BaseModel):
+    number: int = Field(ge=1, le=12)
+    starts_on: str
+    ends_on: str
+    theme: str
+    checkpoint: str | None = None
+    items: list[PrepItem] = Field(default_factory=list)
+
+
+class PrepSnapshot(BaseModel):
+    title: str = "MLE Interview Preparation"
+    starts_on: str = "2026-08-31"
+    ends_on: str = "2026-11-22"
+    total_minutes: int = 14400
+    completed_minutes: int = 0
+    current_week: int = 1
+    weeks: list[PrepWeek] = Field(default_factory=list)
+
+
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
     goals: list[Goal] = Field(default_factory=list)
@@ -339,3 +387,5 @@ class SessionSnapshot(BaseModel):
     focus_history: list[FocusSession] = Field(default_factory=list)
     conversation: list[ConversationMessage] = Field(default_factory=list)
     pending_proposal: ConversationProposal | None = None
+    daily_rhythm: DailyRhythmSettings = Field(default_factory=DailyRhythmSettings)
+
