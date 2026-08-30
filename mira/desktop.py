@@ -48,7 +48,7 @@ def open_app_window(url: str) -> None:
         ) from error
 
     window = webview.create_window(
-        "Mira — Execution Companion",
+        "Mira - Execution Companion",
         url,
         width=1440,
         height=900,
@@ -74,6 +74,7 @@ class DesktopTray:
         self.stop_event = threading.Event()
         self.notified_focus: set[str] = set()
         self.notified_commitments: set[str] = set()
+        self.notified_rhythm: set[str] = set()
         try:
             import pystray
             from PIL import Image
@@ -159,6 +160,24 @@ class DesktopTray:
             if due <= now:
                 self.notified_commitments.add(commitment["id"])
                 self.icon.notify(commitment["statement"], "Commitment due")
+        rhythm = snapshot.get("daily_rhythm") or {}
+        if not rhythm.get("enabled"):
+            return
+        local_now = now.astimezone()
+        current = local_now.strftime("%H:%M")
+        date_key = local_now.date().isoformat()
+        check_ins = (
+            ("morning", rhythm.get("morning_time"), "Morning plan", "Choose today's priorities with Mira."),
+            ("midday", rhythm.get("midday_time"), "Midday check-in", "What moved-and what needs an honest adjustment?"),
+            ("evening", rhythm.get("evening_time"), "Evening review", "Close the loop on today and set up tomorrow."),
+        )
+        due = [item for item in check_ins if item[1] and current >= item[1]]
+        if due:
+            phase, _scheduled, title, message = due[-1]
+            key = f"{date_key}:{phase}"
+            if key not in self.notified_rhythm:
+                self.notified_rhythm.add(key)
+                self.icon.notify(message, title)
 
 
 def startup_command() -> str:
@@ -291,3 +310,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

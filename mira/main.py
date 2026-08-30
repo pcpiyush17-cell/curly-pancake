@@ -17,6 +17,7 @@ from mira.models import (
     ClientEnvelope,
     ClientEvent,
     ConversationMessageSent,
+    DailyRhythmSettings,
     CommitmentCreate,
     GoalCreate,
     MemoryCreate,
@@ -104,6 +105,10 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             return {"startup_enabled": set_startup_enabled(enabled)}
         except RuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error))
+
+    @app.put("/api/daily-rhythm")
+    def update_daily_rhythm(settings: DailyRhythmSettings):
+        return service.update_daily_rhythm(settings)
 
     @app.post("/api/voice/transcribe")
     async def transcribe_voice(request: Request):
@@ -404,3 +409,4 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
 
 
 app = create_app()
+

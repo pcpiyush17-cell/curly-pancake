@@ -21,6 +21,33 @@ def versioned_event(session_id, event_type, payload=None, event_id=None):
     }
 
 
+def test_daily_rhythm_settings_persist_in_snapshot(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/daily-rhythm",
+            json={
+                "enabled": True, "morning_time": "07:45",
+                "midday_time": "13:15", "evening_time": "21:00",
+            },
+        )
+        assert response.status_code == 200
+        assert client.get("/api/snapshot").json()["daily_rhythm"] == response.json()
+
+
+def test_daily_rhythm_rejects_out_of_order_times(tmp_path):
+    app = create_app(tmp_path / "test.db")
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/daily-rhythm",
+            json={
+                "enabled": True, "morning_time": "14:00",
+                "midday_time": "13:00", "evening_time": "20:30",
+            },
+        )
+        assert response.status_code == 422
+
+
 def test_progress_focus_vertical_slice(tmp_path):
     app = create_app(tmp_path / "test.db")
     with TestClient(app) as client:
@@ -655,3 +682,4 @@ def test_transcription_failure_exposes_safe_diagnostic(tmp_path):
             "message": "OpenAI transcription quota or rate limit was reached",
         }
         assert client.get("/api/voice/status").json()["last_error"]["status_code"] == 429
+

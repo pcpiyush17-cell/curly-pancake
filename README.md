@@ -31,8 +31,8 @@ Open `http://127.0.0.1:8000` for the local execution dashboard. It supports
 task creation, progress check-ins, live structured Mira responses, persisted
 task state, and a visible Focus Mode timer.
 The v0.1 living portrait maps Mira's structured expression cues to six
-consistent character states—neutral, listening, focused, skeptical, warm smile,
-and quietly pleased—without requiring Unreal Engine at runtime.
+consistent character states-neutral, listening, focused, skeptical, warm smile,
+and quietly pleased-without requiring Unreal Engine at runtime.
 The second dashboard slice adds task editing and archival, Focus pause/resume/
 complete/cancel controls, and recent Focus-session history.
 The third slice introduces goals, goal-linked tasks, explicit commitments with
@@ -94,8 +94,17 @@ The primary composer now sits directly beneath Mira and supports both text and
 voice. When work does not move, Mira can persist explicit choices such as
 starting Focus Mode or marking the task blocked. No proposal mutates state
 until the user clicks a choice or confirms naturally with language such as
-“yes” or “option A”. Progress mode prepares the structured check-in instead of
+"yes" or "option A". Progress mode prepares the structured check-in instead of
 silently interpreting ordinary conversation as a task update.
+
+## Daily Rhythm
+
+Daily Rhythm is an optional desktop schedule for a morning plan, midday nudge,
+and evening review. Times are stored locally in SQLite and can be changed under
+Companion settings. The tray surfaces only the currently relevant check-in and
+deduplicates each phase for the day, so reopening Mira late does not replay a
+stack of stale reminders. Daily Rhythm is off by default and its check-ins lead
+back to the same ongoing Mira conversation.
 
 ## Voice adapter
 
@@ -177,3 +186,4 @@ with the same event ID when that session reconnects. Client event IDs are also
 stored, so retransmitted inputs are identified as duplicates instead of
 updating task state twice. Legacy unwrapped client messages remain accepted
 during the v0.1 transition.
+

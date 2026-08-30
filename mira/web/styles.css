@@ -157,6 +157,9 @@ body::before { opacity:.06; background-size:52px 52px; }
 .mira-composer #conversation-mic.listening { color:var(--coral); border-color:rgba(240,139,115,.35); }
 .focus-panel { grid-area:focus; }.task-panel { grid-area:task; min-height:650px; }.report-panel { grid-area:report; }.conversation-panel { grid-area:conversation; }.direction-panel { grid-area:direction; min-height:300px; }.commitment-panel { grid-area:commitment; }.memory-panel { grid-area:memory; }
 .settings-panel { grid-column:1/-1; }.desktop-setting-row { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:18px; }.desktop-setting-row .check { color:var(--ink); }.desktop-setting-row button { flex:0 0 auto; }
+.rhythm-settings { display:grid; grid-template-columns:1.4fr repeat(3,minmax(130px,.55fr)) auto; align-items:end; gap:12px; margin-top:22px; padding-top:20px; border-top:1px solid var(--line); }
+.rhythm-settings label { display:grid; gap:7px; color:var(--muted); font-size:.78rem; }.rhythm-settings .check { display:flex; align-items:center; gap:8px; color:var(--ink); }.rhythm-settings input[type="time"] { min-height:44px; }
+.rhythm-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }.rhythm-actions button { background:transparent; border-color:rgba(229,173,114,.25); color:var(--amber); }
 .today-overview { display:grid; grid-template-columns:auto 1fr; align-items:end; gap:0 8px; margin:18px 0 5px; padding:15px 10px 12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
 .today-overview strong { font-size:1.65rem; font-weight:400; }.today-overview > span { padding-bottom:4px; color:var(--muted); }
 .today-overview div { grid-column:1/-1; height:5px; margin-top:12px; overflow:hidden; border-radius:9px; background:rgba(255,255,255,.09); }
@@ -182,6 +185,7 @@ button { border-radius:9px; }.focus-panel .history-block { margin-top:18px; }
 .focus-active .conversation-panel { grid-column:1/4; grid-row:3; }
 @media (max-width:1180px) {
   body,.focus-active { padding-left:0; }.sidebar { display:none; }.shell { width:min(1000px,calc(100% - 24px)); }
+  .rhythm-settings { grid-template-columns:1fr 1fr; }.rhythm-settings button { min-height:44px; }
   .grid { grid-template-columns:1fr 1fr; grid-template-areas:"mira mira" "task focus" "report conversation" "direction commitment" "memory memory"; }
   .mira-panel { min-height:560px; }.task-panel { min-height:auto; }
 }
@@ -189,5 +193,7 @@ button { border-radius:9px; }.focus-panel .history-block { margin-top:18px; }
   .grid { grid-template-columns:1fr; grid-template-areas:"mira" "focus" "task" "report" "conversation" "direction" "commitment" "memory"; }
   .topbar-meta { width:100%; justify-content:space-between; }.clock { text-align:left; }.mira-panel { min-height:500px; }
   .desktop-setting-row { align-items:stretch; flex-direction:column; }
+  .rhythm-settings { grid-template-columns:1fr; }
   .mira-composer { grid-template-columns:1fr 1fr 42px 60px; }.mira-composer input { grid-column:1/-1; grid-row:1; }.mira-copy { bottom:150px; }
 }
+

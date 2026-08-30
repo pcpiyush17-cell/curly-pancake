@@ -9,6 +9,7 @@ from mira.models import (
     Commitment,
     ConversationMessage,
     ConversationProposal,
+    DailyRhythmSettings,
     FocusSession,
     Goal,
     Memory,
@@ -79,6 +80,10 @@ CREATE TABLE IF NOT EXISTS outbound_events (
 );
 CREATE INDEX IF NOT EXISTS idx_outbound_events_pending
 ON outbound_events(session_id, acknowledged_at) WHERE requires_ack = 1;
+CREATE TABLE IF NOT EXISTS daily_rhythm_settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1), enabled INTEGER NOT NULL,
+    morning_time TEXT NOT NULL, midday_time TEXT NOT NULL, evening_time TEXT NOT NULL
+);
 """
 
 
@@ -132,6 +137,35 @@ class SQLiteRepository:
             return
         self.save_task(Task(id="task-ml", title="Finish ML assignment", priority=1))
         self.save_task(Task(id="task-dsa", title="Practice DSA", priority=2))
+
+    def daily_rhythm_settings(self) -> DailyRhythmSettings:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM daily_rhythm_settings WHERE id=1"
+            ).fetchone()
+        if row is None:
+            return DailyRhythmSettings()
+        data = dict(row)
+        data.pop("id", None)
+        data["enabled"] = bool(data["enabled"])
+        return DailyRhythmSettings(**data)
+
+    def save_daily_rhythm_settings(
+        self, settings: DailyRhythmSettings
+    ) -> DailyRhythmSettings:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO daily_rhythm_settings
+                (id,enabled,morning_time,midday_time,evening_time) VALUES (1,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,
+                morning_time=excluded.morning_time, midday_time=excluded.midday_time,
+                evening_time=excluded.evening_time""",
+                (
+                    int(settings.enabled), settings.morning_time,
+                    settings.midday_time, settings.evening_time,
+                ),
+            )
+        return settings
 
     def save_task(self, task: Task) -> None:
         task.updated_at = utc_now()
@@ -539,3 +573,4 @@ def _proposal(row: sqlite3.Row) -> ConversationProposal:
     data = dict(row)
     data["options"] = json.loads(data.pop("options_json"))
     return ConversationProposal(**data)
+

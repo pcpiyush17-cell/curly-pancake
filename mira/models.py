@@ -330,6 +330,19 @@ ClientEvent = Annotated[
 ]
 
 
+class DailyRhythmSettings(BaseModel):
+    enabled: bool = False
+    morning_time: str = Field(default="08:30", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    midday_time: str = Field(default="13:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    evening_time: str = Field(default="20:30", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    @model_validator(mode="after")
+    def times_are_in_order(self) -> "DailyRhythmSettings":
+        if not self.morning_time < self.midday_time < self.evening_time:
+            raise ValueError("Daily Rhythm times must be in morning, midday, evening order")
+        return self
+
+
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
     goals: list[Goal] = Field(default_factory=list)
@@ -339,3 +352,5 @@ class SessionSnapshot(BaseModel):
     focus_history: list[FocusSession] = Field(default_factory=list)
     conversation: list[ConversationMessage] = Field(default_factory=list)
     pending_proposal: ConversationProposal | None = None
+    daily_rhythm: DailyRhythmSettings = Field(default_factory=DailyRhythmSettings)
+

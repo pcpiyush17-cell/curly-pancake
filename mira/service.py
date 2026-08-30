@@ -14,6 +14,7 @@ from mira.models import (
     ConversationMessageSent,
     ConversationProposal,
     ConversationTurn,
+    DailyRhythmSettings,
     Expression,
     MiraResponse,
     MiraState,
@@ -113,6 +114,11 @@ class MiraService:
 
     def delete_memory(self, memory_id: str) -> None:
         self.repository.delete_memory(memory_id)
+
+    def update_daily_rhythm(
+        self, settings: DailyRhythmSettings
+    ) -> DailyRhythmSettings:
+        return self.repository.save_daily_rhythm_settings(settings)
 
     def relevant_memories(self, text: str, limit: int = 5) -> list[Memory]:
         words = {word.strip(".,!?;:'\"").lower() for word in text.split()}
@@ -302,7 +308,7 @@ class MiraService:
         )
         proposal = ConversationProposal(
             id=f"proposal-{uuid4().hex[:12]}", session_id=session_id,
-            prompt="That didn’t move. Choose the next honest action—I’ll only change it after you confirm.",
+            prompt="That didn't move. Choose the next honest action-I'll only change it after you confirm.",
             options=options,
         )
         return self.repository.save_conversation_proposal(proposal)
@@ -414,4 +420,6 @@ class MiraService:
             focus_history=self.repository.focus_history(),
             conversation=self.repository.conversation_messages(session_id),
             pending_proposal=self.repository.pending_conversation_proposal(session_id),
+            daily_rhythm=self.repository.daily_rhythm_settings(),
         )
+
