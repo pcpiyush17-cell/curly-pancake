@@ -1,4 +1,4 @@
-const state = { tasks: [], goals: [], commitments: [], memories: [], conversation: [], pendingProposal:null, voiceTarget:"report", socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
+const state = { prep:null, prepWeek:null, tasks: [], goals: [], commitments: [], memories: [], conversation: [], pendingProposal:null, voiceTarget:"report", socket: null, focus: null, history: [], timerHandle: null, recognition: null, recorder: null, mediaStream: null, listening: false, reportSource: "text", speaking: false, voiceStatus: {provider:"browser",transcription_enabled:false,synthesis_enabled:false}, speechAudio:null, speechUtterance:null, speechAbort:null, speechTimer:null, lastMiraResponse:null, portraitCue:"neutral", portraitRequest:0 };
 const $ = (id) => document.getElementById(id);
 const portraitAssets = {
   neutral: "/static/assets/avatar/mira-neutral.png",
@@ -39,6 +39,52 @@ function portraitCueFor(response) {
 function toast(message) {
   const el = $("toast"); el.textContent = message; el.classList.add("show");
   setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function renderPrep() {
+  if (!state.prep) return;
+  const selected = state.prep.weeks.find(w => w.number === state.prepWeek) || state.prep.weeks[0];
+  state.prepWeek = selected.number;
+  $("prep-week").innerHTML = state.prep.weeks.map(w => `<option value="${w.number}">Week ${w.number}</option>`).join("");
+  $("prep-week").value = String(selected.number);
+  $("prep-theme").textContent = selected.theme;
+  $("prep-range").textContent = `${new Date(selected.starts_on+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${new Date(selected.ends_on+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"})}`;
+  const done = state.prep.completed_minutes / 60;
+  $("prep-hours").textContent = `${done.toFixed(done % 1 ? 1 : 0)} / 240 HOURS`;
+  $("prep-progress-bar").style.width = `${Math.min(100, done / 240 * 100)}%`;
+  $("prep-items").innerHTML = selected.items.map(item => `
+    <div class="prep-item ${item.status}">
+      <span class="prep-track ${item.track}">${item.track}</span>
+      <div><strong>${escapeHtml(item.title)}</strong><small>${Math.round(item.planned_minutes/60*10)/10}h · ${escapeHtml(item.description)}</small></div>
+      <span class="prep-status">${item.status.replace("_"," ")}</span>
+      <div class="prep-actions">
+        ${item.task_id ? '<span class="queued">Queued</span>' : `<button class="quiet queue-prep" data-id="${item.id}">Queue</button>`}
+        <button class="${item.status === "completed" ? "quiet" : "primary"} toggle-prep" data-id="${item.id}" data-status="${item.status === "completed" ? "planned" : "completed"}">${item.status === "completed" ? "Reopen" : "Complete"}</button>
+      </div>
+    </div>`).join("");
+  $("prep-checkpoint").hidden = !selected.checkpoint;
+  $("prep-checkpoint").textContent = selected.checkpoint ? `◆ ${selected.checkpoint}` : "";
+  document.querySelectorAll(".toggle-prep").forEach(b => b.addEventListener("click", () => updatePrep(b.dataset.id,b.dataset.status)));
+  document.querySelectorAll(".queue-prep").forEach(b => b.addEventListener("click", () => queuePrep(b.dataset.id)));
+}
+async function loadPrep() {
+  const response = await fetch("/api/prep");
+  if (!response.ok) return toast("Preparation plan could not be loaded.");
+  state.prep = await response.json();
+  state.prepWeek = state.prep.current_week;
+  renderPrep();
+}
+async function updatePrep(id,status) {
+  const response = await fetch(`/api/prep/items/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
+  if (!response.ok) return toast("That preparation block could not be updated.");
+  await loadPrep(); toast(status === "completed" ? "Block completed." : "Block reopened.");
+}
+async function queuePrep(id) {
+  const response = await fetch(`/api/prep/items/${id}/queue`,{method:"POST"});
+  if (!response.ok) return toast("That block could not be queued.");
+  const result = await response.json();
+  if (!state.tasks.some(t => t.id === result.task.id)) state.tasks.push(result.task);
+  renderTasks(); await loadPrep(); toast("Added to today's execution queue.");
 }
 
 function renderTasks() {
@@ -506,6 +552,9 @@ $("save-rhythm").addEventListener("click", async () => {
   applyRhythm(await response.json());
   toast($("rhythm-enabled").checked ? "Daily Rhythm is on." : "Daily Rhythm is off.");
 });
+$("prep-week").addEventListener("change", e => { state.prepWeek=Number(e.target.value); renderPrep(); });
+$("prep-current").addEventListener("click", () => { state.prepWeek=state.prep.current_week; renderPrep(); });
+
 document.querySelectorAll("[data-rhythm-prompt]").forEach(button => button.addEventListener("click", () => {
   $("composer-mode").value = "talk";
   $("conversation-text").value = button.dataset.rhythmPrompt;
@@ -514,5 +563,5 @@ document.querySelectorAll("[data-rhythm-prompt]").forEach(button => button.addEv
   toast("Check-in ready. Add anything you want, then send it.");
 }));
 
-preloadPortraits(); updateClock(); setInterval(updateClock, 30000); connect(); loadReasoningStatus(); loadDesktopStatus(); setupVoice();
+preloadPortraits(); updateClock(); setInterval(updateClock, 30000); connect(); loadPrep(); loadReasoningStatus(); loadDesktopStatus(); setupVoice();
 

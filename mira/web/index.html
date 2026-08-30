@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mira - Execution Companion</title>
-  <link rel="stylesheet" href="/static/styles.css?v=rhythm-1">
+  <link rel="stylesheet" href="/static/styles.css?v=prep-1">
 </head>
 <body>
   <aside class="sidebar" aria-label="Primary navigation">
     <div class="brand">Mira<span></span></div>
     <nav>
       <a class="active" href="#home"><span></span>Home</a>
+      <a href="#prep"><span>◆</span>Prep</a>
       <a href="#focus"><span>?</span>Focus</a>
       <a href="#review"><span>?</span>Review</a>
       <a href="#direction"><span>?</span>Roadmap</a>
@@ -31,6 +32,20 @@
         <div class="connection"><span id="connection-dot"></span><span id="connection-label">Connecting</span><span id="reasoning-mode"></span></div>
       </div>
     </header>
+
+    <article class="panel prep-panel" id="prep">
+      <div class="section-heading">
+        <div><p class="eyebrow">12-WEEK MLE INTERVIEW PREP</p><h2 id="prep-theme">Loading plan…</h2></div>
+        <span id="prep-hours" class="pill">0 / 240 HOURS</span>
+      </div>
+      <div class="prep-toolbar">
+        <label>Week<select id="prep-week"></select></label>
+        <div class="prep-progress"><span id="prep-range"></span><div><i id="prep-progress-bar"></i></div></div>
+        <button id="prep-current" type="button" class="quiet">Current week</button>
+      </div>
+      <div id="prep-items" class="prep-items"><p class="muted">Preparing the roadmap…</p></div>
+      <p id="prep-checkpoint" class="prep-checkpoint" hidden></p>
+    </article>
 
     <section class="grid">
       <article class="panel mira-panel" id="review">
@@ -179,7 +194,7 @@
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=rhythm-1"></script>
+  <script src="/static/app.js?v=prep-1"></script>
 </body>
 </html>
 

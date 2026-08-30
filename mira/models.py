@@ -343,6 +343,41 @@ class DailyRhythmSettings(BaseModel):
         return self
 
 
+class PrepItem(BaseModel):
+    id: str
+    week: int = Field(ge=1, le=12)
+    track: Literal["dsa", "fundamentals", "design", "practice", "review"]
+    title: str
+    description: str
+    planned_minutes: int = Field(ge=15, le=1200)
+    status: Literal["planned", "in_progress", "completed", "skipped"] = "planned"
+    task_id: str | None = None
+    completed_at: datetime | None = None
+
+
+class PrepItemUpdate(BaseModel):
+    status: Literal["planned", "in_progress", "completed", "skipped"]
+
+
+class PrepWeek(BaseModel):
+    number: int = Field(ge=1, le=12)
+    starts_on: str
+    ends_on: str
+    theme: str
+    checkpoint: str | None = None
+    items: list[PrepItem] = Field(default_factory=list)
+
+
+class PrepSnapshot(BaseModel):
+    title: str = "MLE Interview Preparation"
+    starts_on: str = "2026-08-31"
+    ends_on: str = "2026-11-22"
+    total_minutes: int = 14400
+    completed_minutes: int = 0
+    current_week: int = 1
+    weeks: list[PrepWeek] = Field(default_factory=list)
+
+
 class SessionSnapshot(BaseModel):
     tasks: list[Task]
     goals: list[Goal] = Field(default_factory=list)

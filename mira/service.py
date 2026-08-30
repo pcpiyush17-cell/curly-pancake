@@ -22,6 +22,8 @@ from mira.models import (
     Memory,
     MemoryCreate,
     MemoryUpdate,
+    PrepItemUpdate,
+    PrepSnapshot,
     ProgressReported,
     ProposalOption,
     ProposalSelected,
@@ -36,6 +38,7 @@ from mira.models import (
     utc_now,
 )
 from mira.policy import DeterministicMiraPolicy
+from mira.prep import active_week, canonical_weeks
 from mira.reasoning import (
     ConversationContext,
     MiraContext,
@@ -119,6 +122,37 @@ class MiraService:
         self, settings: DailyRhythmSettings
     ) -> DailyRhythmSettings:
         return self.repository.save_daily_rhythm_settings(settings)
+
+    def prep_snapshot(self) -> PrepSnapshot:
+        weeks = canonical_weeks()
+        self.repository.seed_prep_items([item for week in weeks for item in week.items])
+        persisted = {item.id: item for item in self.repository.list_prep_items()}
+        for week in weeks:
+            week.items = [persisted[item.id] for item in week.items]
+        completed = sum(
+            item.planned_minutes for item in persisted.values()
+            if item.status == "completed"
+        )
+        return PrepSnapshot(
+            completed_minutes=completed, current_week=active_week(), weeks=weeks
+        )
+
+    def update_prep_item(self, item_id: str, data: PrepItemUpdate):
+        self.prep_snapshot()
+        return self.repository.update_prep_item(item_id, data.status)
+
+    def queue_prep_item(self, item_id: str):
+        self.prep_snapshot()
+        item = self.repository.get_prep_item(item_id)
+        if item is None:
+            raise KeyError(item_id)
+        if item.task_id:
+            task = self.repository.get_task(item.task_id)
+            if task is not None:
+                return {"item": item, "task": task}
+        task = self.create_task(TaskCreate(title=item.title, priority=1))
+        item = self.repository.link_prep_item(item.id, task.id)
+        return {"item": item, "task": task}
 
     def relevant_memories(self, text: str, limit: int = 5) -> list[Memory]:
         words = {word.strip(".,!?;:'\"").lower() for word in text.split()}

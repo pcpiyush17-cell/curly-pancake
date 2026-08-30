@@ -22,6 +22,7 @@ from mira.models import (
     GoalCreate,
     MemoryCreate,
     MemoryUpdate,
+    PrepItemUpdate,
     ProgressReported,
     ProposalSelected,
     SnapshotRequested,
@@ -161,6 +162,24 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/snapshot")
     def snapshot():
         return service.snapshot()
+
+    @app.get("/api/prep")
+    def prep_snapshot():
+        return service.prep_snapshot()
+
+    @app.patch("/api/prep/items/{item_id}")
+    def update_prep_item(item_id: str, update: PrepItemUpdate):
+        try:
+            return service.update_prep_item(item_id, update)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown preparation item")
+
+    @app.post("/api/prep/items/{item_id}/queue")
+    def queue_prep_item(item_id: str):
+        try:
+            return service.queue_prep_item(item_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Unknown preparation item")
 
     @app.post("/api/tasks", status_code=201)
     def create_task(task: TaskCreate):

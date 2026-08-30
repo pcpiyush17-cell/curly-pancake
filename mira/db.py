@@ -13,6 +13,7 @@ from mira.models import (
     FocusSession,
     Goal,
     Memory,
+    PrepItem,
     Task,
     TaskStatus,
     utc_now,
@@ -84,6 +85,13 @@ CREATE TABLE IF NOT EXISTS daily_rhythm_settings (
     id INTEGER PRIMARY KEY CHECK(id = 1), enabled INTEGER NOT NULL,
     morning_time TEXT NOT NULL, midday_time TEXT NOT NULL, evening_time TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS prep_items (
+    id TEXT PRIMARY KEY, week INTEGER NOT NULL, track TEXT NOT NULL,
+    title TEXT NOT NULL, description TEXT NOT NULL, planned_minutes INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'planned', task_id TEXT, completed_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
+CREATE INDEX IF NOT EXISTS idx_prep_items_week ON prep_items(week, track);
 """
 
 
@@ -427,6 +435,52 @@ class SQLiteRepository:
                 (limit,),
             ).fetchall()
         return [FocusSession(**dict(row)) for row in rows]
+
+    def seed_prep_items(self, items: list[PrepItem]) -> None:
+        with self.connect() as connection:
+            for item in items:
+                connection.execute(
+                    """INSERT OR IGNORE INTO prep_items
+                    (id,week,track,title,description,planned_minutes,status,task_id,completed_at)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (item.id, item.week, item.track, item.title, item.description,
+                     item.planned_minutes, item.status, item.task_id, _dt(item.completed_at)),
+                )
+
+    def list_prep_items(self) -> list[PrepItem]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM prep_items ORDER BY week, rowid"
+            ).fetchall()
+        return [PrepItem(**dict(row)) for row in rows]
+
+    def get_prep_item(self, item_id: str) -> PrepItem | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM prep_items WHERE id=?", (item_id,)
+            ).fetchone()
+        return PrepItem(**dict(row)) if row else None
+
+    def update_prep_item(self, item_id: str, status: str) -> PrepItem:
+        completed_at = _dt(utc_now()) if status == "completed" else None
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE prep_items SET status=?, completed_at=? WHERE id=?",
+                (status, completed_at, item_id),
+            ).rowcount
+        if not changed:
+            raise KeyError(item_id)
+        return self.get_prep_item(item_id)
+
+    def link_prep_item(self, item_id: str, task_id: str) -> PrepItem:
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE prep_items SET task_id=?, status='in_progress' WHERE id=?",
+                (task_id, item_id),
+            ).rowcount
+        if not changed:
+            raise KeyError(item_id)
+        return self.get_prep_item(item_id)
 
     def record_event(self, session_id: str, event_type: str, payload: dict) -> None:
         with self.connect() as connection:

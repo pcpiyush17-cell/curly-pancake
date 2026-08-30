@@ -97,6 +97,15 @@ until the user clicks a choice or confirms naturally with language such as
 "yes" or "option A". Progress mode prepares the structured check-in instead of
 silently interpreting ordinary conversation as a task update.
 
+## Interview preparation workspace
+
+Mira includes a seeded, migration-safe 12-week MLE interview plan covering 240
+focused hours from 31 August through 22 November 2026. The preparation panel
+tracks five outcome blocks per week, exposes checkpoints, and lets the user add
+one block at a time to the ordinary execution queue and Focus workflow. Mira
+remains the source of truth; course completion percentages are intentionally
+not treated as progress.
+
 ## Daily Rhythm
 
 Daily Rhythm is an optional desktop schedule for a morning plan, midday nudge,
