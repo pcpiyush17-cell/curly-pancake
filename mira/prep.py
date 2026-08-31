@@ -43,6 +43,57 @@ GUIDANCE = {
     "review": "Use the error log and spaced repetition; repair weaknesses instead of adding content.",
 }
 
+
+def action_plan(track: str, title: str) -> tuple[list[str], str, str]:
+    plans = {
+        "dsa": (
+            [
+                f"Open NeetCode and solve this exact set without reading solutions first: {title}.",
+                "For every problem, record the pattern, brute-force idea, optimized approach, and time/space complexity.",
+                "Mark every hinted or failed problem and re-solve it from a blank editor after 24 hours.",
+            ],
+            "A solution log with accepted code, complexity, and a failure-pattern note for every problem.",
+            "The target problem count is accepted, every solution is explained aloud, and all misses are scheduled for re-solve.",
+        ),
+        "fundamentals": (
+            [
+                f"Watch the matching TAAI lesson(s) and attachments for: {title}.",
+                "Close the material and write a one-page recall sheet containing definitions, equations, assumptions, and one worked example.",
+                "Complete the attached questions, then explain the topic aloud for five minutes without notes.",
+            ],
+            "One recall sheet plus worked answers to the matching course exercises.",
+            "You can derive the key result, answer the attached questions, and explain when the concept fails or should not be used.",
+        ),
+        "design": (
+            [
+                f"Design this system on paper or a whiteboard: {title}.",
+                "Write functional requirements, non-functional requirements, scale assumptions, API contracts, and the data model.",
+                "Draw the end-to-end architecture, then document bottlenecks, failure modes, observability, and two explicit trade-offs.",
+            ],
+            "A reviewable design diagram with requirements, APIs, storage choices, sizing, and trade-offs.",
+            "You can present the design in 35 minutes and defend scaling, reliability, and ML-specific decisions for 10 minutes.",
+        ),
+        "practice": (
+            [
+                f"Implement this block from a blank editor or SQL console: {title}.",
+                "Add representative, boundary, and failure-case tests; run them and correct every failure.",
+                "Save the final code or query and write three bullets covering complexity, correctness, and the main mistake avoided.",
+            ],
+            "Executable code or SQL, its test cases, and a short engineering note.",
+            "The work runs without copied solution code, passes the tests, and you can explain every line and trade-off.",
+        ),
+        "review": (
+            [
+                f"Run this closed-book and timed: {title}.",
+                "Update the error log with cause, corrected mental model, and a concrete prevention rule for every miss.",
+                "Re-solve or re-explain the weakest items, then choose the first repair task for the next study session.",
+            ],
+            "A scored attempt, updated error log, and a prioritized repair list.",
+            "Every miss has a diagnosed cause and a scheduled repair; no item is marked complete merely because its solution was read.",
+        ),
+    }
+    return plans[track]
+
 def canonical_weeks() -> list[PrepWeek]:
     result = []
     for number, (theme, minutes, titles, checkpoint) in enumerate(WEEKS, 1):
@@ -51,10 +102,20 @@ def canonical_weeks() -> list[PrepWeek]:
             number=number, starts_on=starts.isoformat(),
             ends_on=(starts + timedelta(days=6)).isoformat(),
             theme=theme, checkpoint=checkpoint,
-            items=[PrepItem(
-                id=f"prep-w{number:02d}-{track}", week=number, track=track,
-                title=title, description=GUIDANCE[track], planned_minutes=duration,
-            ) for track, duration, title in zip(TRACKS, minutes, titles)],
+            items=[
+                PrepItem(
+                    id=f"prep-w{number:02d}-{track}",
+                    week=number,
+                    track=track,
+                    title=title,
+                    description=GUIDANCE[track],
+                    actions=action_plan(track, title)[0],
+                    deliverable=action_plan(track, title)[1],
+                    done_when=action_plan(track, title)[2],
+                    planned_minutes=duration,
+                )
+                for track, duration, title in zip(TRACKS, minutes, titles)
+            ],
         ))
     return result
 

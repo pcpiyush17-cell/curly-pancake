@@ -349,6 +349,9 @@ class PrepItem(BaseModel):
     track: Literal["dsa", "fundamentals", "design", "practice", "review"]
     title: str
     description: str
+    actions: list[str] = Field(default_factory=list)
+    deliverable: str = ""
+    done_when: str = ""
     planned_minutes: int = Field(ge=15, le=1200)
     status: Literal["planned", "in_progress", "completed", "skipped"] = "planned"
     task_id: str | None = None

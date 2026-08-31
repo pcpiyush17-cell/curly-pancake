@@ -128,7 +128,11 @@ class MiraService:
         self.repository.seed_prep_items([item for week in weeks for item in week.items])
         persisted = {item.id: item for item in self.repository.list_prep_items()}
         for week in weeks:
-            week.items = [persisted[item.id] for item in week.items]
+            for item in week.items:
+                saved = persisted[item.id]
+                item.status = saved.status
+                item.task_id = saved.task_id
+                item.completed_at = saved.completed_at
         completed = sum(
             item.planned_minutes for item in persisted.values()
             if item.status == "completed"

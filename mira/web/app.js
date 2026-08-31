@@ -53,15 +53,27 @@ function renderPrep() {
   $("prep-hours").textContent = `${done.toFixed(done % 1 ? 1 : 0)} / 240 HOURS`;
   $("prep-progress-bar").style.width = `${Math.min(100, done / 240 * 100)}%`;
   $("prep-items").innerHTML = selected.items.map(item => `
-    <div class="prep-item ${item.status}">
-      <span class="prep-track ${item.track}">${item.track}</span>
-      <div><strong>${escapeHtml(item.title)}</strong><small>${Math.round(item.planned_minutes/60*10)/10}h · ${escapeHtml(item.description)}</small></div>
-      <span class="prep-status">${item.status.replace("_"," ")}</span>
-      <div class="prep-actions">
-        ${item.task_id ? '<span class="queued">Queued</span>' : `<button class="quiet queue-prep" data-id="${item.id}">Queue</button>`}
-        <button class="${item.status === "completed" ? "quiet" : "primary"} toggle-prep" data-id="${item.id}" data-status="${item.status === "completed" ? "planned" : "completed"}">${item.status === "completed" ? "Reopen" : "Complete"}</button>
+    <details class="prep-item ${item.status}">
+      <summary>
+        <span class="prep-track ${item.track}">${item.track}</span>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${Math.round(item.planned_minutes/60*10)/10} hours · click for exact work</small>
+        <span class="prep-status">${item.status.replace("_"," ")}</span>
+      </summary>
+      <div class="prep-detail">
+        <p>${escapeHtml(item.description)}</p>
+        <p class="prep-detail-label">Do this</p>
+        <ol>${item.actions.map(action => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
+        <p class="prep-detail-label">Evidence to produce</p>
+        <p>${escapeHtml(item.deliverable)}</p>
+        <p class="prep-detail-label">Done only when</p>
+        <p>${escapeHtml(item.done_when)}</p>
       </div>
-    </div>`).join("");
+      <div class="prep-actions">
+        ${item.task_id ? '<span class="queued">In today’s queue</span>' : `<button class="quiet queue-prep" data-id="${item.id}">Queue exact work</button>`}
+        <button class="${item.status === "completed" ? "quiet" : "primary"} toggle-prep" data-id="${item.id}" data-status="${item.status === "completed" ? "planned" : "completed"}">${item.status === "completed" ? "Reopen" : "Complete block"}</button>
+      </div>
+    </details>`).join("");
   $("prep-checkpoint").hidden = !selected.checkpoint;
   $("prep-checkpoint").textContent = selected.checkpoint ? `◆ ${selected.checkpoint}` : "";
   document.querySelectorAll(".toggle-prep").forEach(b => b.addEventListener("click", () => updatePrep(b.dataset.id,b.dataset.status)));
@@ -73,6 +85,7 @@ async function loadPrep() {
   state.prep = await response.json();
   state.prepWeek = state.prep.current_week;
   renderPrep();
+  renderTasks();
 }
 async function updatePrep(id,status) {
   const response = await fetch(`/api/prep/items/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
@@ -84,11 +97,35 @@ async function queuePrep(id) {
   if (!response.ok) return toast("That block could not be queued.");
   const result = await response.json();
   if (!state.tasks.some(t => t.id === result.task.id)) state.tasks.push(result.task);
-  renderTasks(); await loadPrep(); toast("Added to today's execution queue.");
+  await loadPrep(); renderTasks(); document.querySelector(".task-panel").scrollIntoView({behavior:"smooth",block:"start"}); toast("Exact work added to today’s prep queue.");
+}
+
+
+function prepItemForTask(taskId) {
+  if (!state.prep) return null;
+  for (const week of state.prep.weeks) {
+    const item = week.items.find(candidate => candidate.task_id === taskId);
+    if (item) return item;
+  }
+  return null;
+}
+
+function renderQueuedPrepDetails(task) {
+  const item = prepItemForTask(task.id);
+  if (!item) return "";
+  return `<details class="queued-prep-details">
+    <summary>Exact work and completion criteria</summary>
+    <ol>${item.actions.map(action => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
+    <strong>Produce</strong><p>${escapeHtml(item.deliverable)}</p>
+    <strong>Done when</strong><p>${escapeHtml(item.done_when)}</p>
+  </details>`;
 }
 
 function renderTasks() {
-  const sorted = [...state.tasks].sort((a,b) => a.priority - b.priority);
+  const prepTaskIds = new Set(
+    (state.prep?.weeks || []).flatMap(week => week.items).map(item => item.task_id).filter(Boolean)
+  );
+  const sorted = state.tasks.filter(task => prepTaskIds.has(task.id)).sort((a,b) => a.priority - b.priority);
   const completed = sorted.filter(task => task.status === "completed").length;
   $("today-completed").textContent = completed;
   $("today-total").textContent = sorted.length;
@@ -97,10 +134,10 @@ function renderTasks() {
   $("task-list").innerHTML = sorted.map(task => `
     <div class="task ${task.status === "completed" ? "completed" : ""}">
       <span class="dot"></span>
-      <div><div class="title">${escapeHtml(task.title)}</div><small>P${task.priority} � ${task.status.replace("_", " ")}</small></div>
+      <div><div class="title">${escapeHtml(task.title)}</div><small>Prep block · ${task.status.replace("_", " ")}</small>${renderQueuedPrepDetails(task)}</div>
       <span class="percent">${Math.round(task.progress * 100)}%</span>
       <span class="task-actions"><button type="button" class="quiet edit-task" data-id="${task.id}">Edit</button><button type="button" class="danger archive-task" data-id="${task.id}">Archive</button></span>
-    </div>`).join("") || `<p class="muted">Your queue is empty. Add one concrete task.</p>`;
+    </div>`).join("") || `<p class="muted">Your prep queue is empty. Expand a schedule card and choose Queue exact work.</p>`;
   const options = sorted.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("");
   const selectedReport = $("report-task").value, selectedFocus = $("focus-task").value, selectedConversation = $("conversation-task").value;
   $("report-task").innerHTML = options; $("focus-task").innerHTML = options;
