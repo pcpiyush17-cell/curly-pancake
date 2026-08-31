@@ -3,29 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mira - Execution Companion</title>
-  <link rel="stylesheet" href="/static/styles.css?v=prep-1">
+  <title>Mira - MLE Interview Prep</title>
+  <link rel="stylesheet" href="/static/styles.css?v=prep-2">
 </head>
 <body>
   <aside class="sidebar" aria-label="Primary navigation">
     <div class="brand">Mira<span></span></div>
     <nav>
-      <a class="active" href="#home"><span></span>Home</a>
-      <a href="#prep"><span>◆</span>Prep</a>
-      <a href="#focus"><span>?</span>Focus</a>
-      <a href="#review"><span>?</span>Review</a>
-      <a href="#direction"><span>?</span>Roadmap</a>
-      <a href="#memory"><span>?</span>Workspace</a>
-      <a href="#settings"><span>?</span>Settings</a>
+      <a class="active" href="#prep"><span>◆</span>Plan</a>
+      <a href="#queue"><span>✓</span>Queue</a>
+      <a href="#focus"><span>◉</span>Focus</a>
+      <a href="#review"><span>↻</span>Review</a>
+      <a href="#settings"><span>⚙</span>Schedule</a>
     </nav>
     <p class="sidebar-quote">"Discipline is choosing between what you want now and what you want most."</p>
-    <a class="talk-link" href="#conversation"><span>?</span>Talk to Mira</a>
+    <a class="talk-link" href="#conversation"><span>✦</span>Prep with Mira</a>
   </aside>
   <main class="shell">
     <header class="topbar" id="home">
       <div>
         <h1 id="greeting">Good evening, Piyush.</h1>
-        <p class="header-subtitle">How did your day go?</p>
+        <p class="header-subtitle">What will move your interview preparation forward today?</p>
       </div>
       <div class="topbar-meta">
         <div class="clock"><span id="today-date"></span><strong id="today-time"></strong></div>
@@ -56,7 +54,7 @@
         </div>
         <div class="mira-copy">
           <p class="eyebrow">MIRA SAYS</p>
-          <blockquote id="mira-speech">Tell me what moved. We'll handle what didn't.</blockquote>
+          <blockquote id="mira-speech">Tell me what you studied, where you got stuck, and what needs repair.</blockquote>
           <p id="mira-tone">calm � ready</p>
         </div>
         <form id="conversation-form" class="mira-composer">
@@ -75,7 +73,7 @@
         </div>
         <div id="timer" class="timer">25:00</div>
         <div class="progress-track"><div id="timer-progress"></div></div>
-        <p id="focus-detail" class="muted">Complete a task and ask Mira to start the next focus block.</p>
+        <p id="focus-detail" class="muted">Queue a preparation block above, open its exact work, and start a focused session.</p>
         <div id="focus-controls" class="focus-controls" hidden>
           <button id="focus-toggle" type="button">Pause</button>
           <button id="focus-complete" type="button" class="quiet">Complete</button>
@@ -87,9 +85,9 @@
         </div>
       </article>
 
-      <article class="panel task-panel">
+      <article class="panel task-panel" id="queue">
         <div class="section-heading">
-          <div><p class="eyebrow">TODAY</p><h2>Execution queue</h2></div>
+          <div><p class="eyebrow">TODAY</p><h2>Queued prep blocks</h2></div>
           <span id="task-count" class="pill">0 TASKS</span>
         </div>
         <div class="today-overview">
@@ -97,7 +95,7 @@
           <span>Done</span>
           <div><i id="today-progress"></i></div>
         </div>
-        <form id="task-form" class="task-form">
+        <form id="task-form" class="task-form" hidden aria-hidden="true">
           <input id="task-title" maxlength="160" placeholder="Add the next concrete task." required>
           <select id="task-priority" aria-label="Priority">
             <option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option>
@@ -132,22 +130,22 @@
 
       <article class="panel conversation-panel" id="conversation">
         <div class="section-heading">
-          <div><p class="eyebrow">FOLLOW-UP</p><h2>Continue the conversation</h2></div>
+          <div><p class="eyebrow">PREP COACH</p><h2>Ask, review, repair</h2></div>
           <span class="pill">CONTEXTUAL</span>
         </div>
-        <p class="muted">Mira keeps the thread, but executes changes only after you confirm a visible action.</p>
+        <p class="muted">Use Mira to clarify a concept, review an interview answer, diagnose a miss, or choose the next repair task.</p>
         <div id="conversation-list" class="conversation-list" aria-live="polite">
           <p class="muted">No follow-up yet. Ask Mira what to do next.</p>
         </div>
       </article>
 
-      <article class="panel direction-panel" id="direction">
+      <article class="panel direction-panel" id="direction" hidden aria-hidden="true">
         <div class="section-heading"><div><p class="eyebrow">DIRECTION</p><h2>Goals</h2></div><span id="goal-count" class="pill">0 ACTIVE</span></div>
         <form id="goal-form" class="inline-form"><input id="goal-title" maxlength="180" placeholder="Define an outcome." required><button>Add goal</button></form>
         <div id="goal-list" class="goal-list"></div>
       </article>
 
-      <article class="panel commitment-panel">
+      <article class="panel commitment-panel" hidden aria-hidden="true">
         <div class="section-heading"><div><p class="eyebrow">YOUR WORD</p><h2>Commitments</h2></div><span id="commitment-count" class="pill">0 OPEN</span></div>
         <form id="commitment-form">
           <input id="commitment-statement" maxlength="300" placeholder="I will finish the first draft by." required>
@@ -158,7 +156,7 @@
         <div id="commitment-list" class="commitment-list"></div>
       </article>
 
-      <article class="panel memory-panel" id="memory">
+      <article class="panel memory-panel" id="memory" hidden aria-hidden="true">
         <div class="section-heading"><div><p class="eyebrow">USER-CONTROLLED</p><h2>Mira's memory</h2></div><span id="memory-count" class="pill">0 MEMORIES</span></div>
         <p class="muted">Only memories shown here can enter Mira's reasoning context. You can correct or delete any of them.</p>
         <form id="memory-form">
@@ -173,7 +171,7 @@
 
       <article class="panel settings-panel" id="settings">
         <div class="section-heading"><div><p class="eyebrow">DESKTOP</p><h2>Companion settings</h2></div><span id="tray-status" class="pill">CHECKING</span></div>
-        <p class="muted">Keep Mira available from the system tray and receive Focus completion and commitment reminders.</p>
+        <p class="muted">Keep the prep coach available from the system tray and schedule focused study check-ins.</p>
         <div class="desktop-setting-row">
           <label class="check"><input id="launch-startup" type="checkbox"> Launch Mira when I sign in to Windows</label>
           <button id="save-desktop-settings" type="button" class="primary">Save desktop settings</button>
@@ -194,7 +192,7 @@
     </section>
   </main>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=prep-1"></script>
+  <script src="/static/app.js?v=prep-2"></script>
 </body>
 </html>
 
