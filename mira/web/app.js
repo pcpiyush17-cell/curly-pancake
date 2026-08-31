@@ -85,6 +85,7 @@ async function loadPrep() {
   state.prep = await response.json();
   state.prepWeek = state.prep.current_week;
   renderPrep();
+  renderTasks();
 }
 async function updatePrep(id,status) {
   const response = await fetch(`/api/prep/items/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
