@@ -121,7 +121,10 @@ function renderQueuedPrepDetails(task) {
 }
 
 function renderTasks() {
-  const sorted = [...state.tasks].sort((a,b) => a.priority - b.priority);
+  const prepTaskIds = new Set(
+    (state.prep?.weeks || []).flatMap(week => week.items).map(item => item.task_id).filter(Boolean)
+  );
+  const sorted = state.tasks.filter(task => prepTaskIds.has(task.id)).sort((a,b) => a.priority - b.priority);
   const completed = sorted.filter(task => task.status === "completed").length;
   $("today-completed").textContent = completed;
   $("today-total").textContent = sorted.length;
@@ -130,10 +133,10 @@ function renderTasks() {
   $("task-list").innerHTML = sorted.map(task => `
     <div class="task ${task.status === "completed" ? "completed" : ""}">
       <span class="dot"></span>
-      <div><div class="title">${escapeHtml(task.title)}</div><small>P${task.priority} � ${task.status.replace("_", " ")}</small></div>
+      <div><div class="title">${escapeHtml(task.title)}</div><small>Prep block · ${task.status.replace("_", " ")}</small>${renderQueuedPrepDetails(task)}</div>
       <span class="percent">${Math.round(task.progress * 100)}%</span>
       <span class="task-actions"><button type="button" class="quiet edit-task" data-id="${task.id}">Edit</button><button type="button" class="danger archive-task" data-id="${task.id}">Archive</button></span>
-    </div>`).join("") || `<p class="muted">Your queue is empty. Add one concrete task.</p>`;
+    </div>`).join("") || `<p class="muted">Your prep queue is empty. Expand a schedule card and choose Queue exact work.</p>`;
   const options = sorted.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("");
   const selectedReport = $("report-task").value, selectedFocus = $("focus-task").value, selectedConversation = $("conversation-task").value;
   $("report-task").innerHTML = options; $("focus-task").innerHTML = options;
